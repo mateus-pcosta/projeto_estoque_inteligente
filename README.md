@@ -34,3 +34,29 @@ Sistema de controle de estoque simples e inteligente para pequenos comércios. D
 
 * [ ] Interface amigável com filtros, busca e gráficos.
 * [ ] Visualização dos dados em tempo real.
+
+---
+
+## 🏗️ Estrutura do Projeto
+
+```bash
+projeto_estoque_inteligente/
+│
+├── core/               # Módulos principais do sistema
+│   ├── gerenciamento_estoque.py  # Controle de estoque (CRUD, alertas)
+│   ├── previsao_demanda.py       # Modelos de IA para previsão
+│   └── relatorios.py             # Geração de gráficos/relatórios
+│
+├── data/               # Gestão de dados
+│   ├── processed/      # Dados processados (ex: previsões geradas)
+│   └── raw/           # Dados originais (nunca alterados manualmente)
+│       └── produtos.csv  # Base de produtos inicial
+│
+├── tests/              # Testes automatizados
+│   ├── integracao/     # Testes de integração entre módulos
+│   └── unitarios/      # Testes unitários
+│       └── visualizacao_simples.py  # Teste da visualização básica
+│
+└── utils/              # Código compartilhado
+    ├── config.py       # Configurações globais
+    └── helpers.py      # Funções auxiliares reutilizáveis
