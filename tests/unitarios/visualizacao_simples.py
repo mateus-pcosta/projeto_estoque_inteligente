@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-CSV_PATH = "data/produtos.csv"
+CSV_PATH = "data/raw/produtos.csv"
 
 def carregar_dados():
     try:
