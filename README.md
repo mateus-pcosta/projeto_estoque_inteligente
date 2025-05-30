@@ -34,3 +34,9 @@ Sistema de controle de estoque simples e inteligente para pequenos comércios. D
 
 * [ ] Interface amigável com filtros, busca e gráficos.
 * [ ] Visualização dos dados em tempo real.
+
+---
+
+## Nova Estrutura
+```bash
+tree -L 3  # Adicione a saída atualizada
