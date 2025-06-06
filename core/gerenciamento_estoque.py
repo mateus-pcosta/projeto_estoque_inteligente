@@ -4,7 +4,6 @@ import os
 CSV_PATH = "data/raw/produtos.csv"
 
 def carregar_produtos():
-    """Carrega os produtos do arquivo CSV."""
     if os.path.exists(CSV_PATH):
         return pd.read_csv(CSV_PATH)
     else:
@@ -12,11 +11,9 @@ def carregar_produtos():
         return pd.DataFrame()
 
 def salvar_produtos(df):
-    """Salva os produtos no arquivo CSV."""
     df.to_csv(CSV_PATH, index=False)
 
 def adicionar_produto(produto):
-    """Adiciona um novo produto ao estoque."""
     df = carregar_produtos()
     novo_id = df["id_produto"].max() + 1 if not df.empty else 1
     produto["id_produto"] = novo_id
@@ -25,7 +22,6 @@ def adicionar_produto(produto):
     print(f"Produto '{produto['nome']}' adicionado com ID {novo_id}.")
 
 def editar_produto(id_produto, novos_dados):
-    """Edita um produto existente no estoque."""
     df = carregar_produtos()
     if id_produto in df["id_produto"].values:
         df.loc[df["id_produto"] == id_produto, novos_dados.keys()] = list(novos_dados.values())
@@ -35,7 +31,6 @@ def editar_produto(id_produto, novos_dados):
         print(f"Produto ID {id_produto} não encontrado.")
 
 def remover_produto(id_produto):
-    """Remove um produto do estoque pelo ID."""
     df = carregar_produtos()
     if id_produto in df["id_produto"].values:
         df = df[df["id_produto"] != id_produto]
@@ -45,7 +40,6 @@ def remover_produto(id_produto):
         print(f"Produto ID {id_produto} não encontrado.")
 
 def buscar_produto(pesquisa):
-    """Busca produtos por nome, categoria ou ID."""
     df = carregar_produtos()
     if isinstance(pesquisa, int):
         return df[df["id_produto"] == pesquisa]

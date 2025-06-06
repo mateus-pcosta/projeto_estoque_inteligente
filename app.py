@@ -8,27 +8,15 @@ from core.gerenciamento_estoque import (
 st.set_page_config(page_title="Estoque Inteligente", layout="wide")
 st.title("📦 Estoque Inteligente — Gestão de Produtos")
 
-# Carregar dados
 df = carregar_produtos()
 
-# Sidebar com ações
-st.sidebar.title("Menu")
-opcao = st.sidebar.selectbox("Escolha uma ação:", [
-    "Visualizar Produtos",
-    "Buscar Produto",
-    "Adicionar Produto",
-    "Editar Produto",
-    "Remover Produto"
-])
-
-# Visualizar todos os produtos
-if opcao == "Visualizar Produtos":
+def visualizar_produtos(df):
     st.subheader("📋 Lista de Produtos no Estoque")
     st.dataframe(df)
 
-# Buscar produtos
-elif opcao == "Buscar Produto":
-    termo = st.text_input("🔍 Digite nome, categoria ou ID:")
+def buscar():
+    st.subheader("🔍 Buscar Produto")
+    termo = st.text_input("Digite nome, categoria ou ID:")
     if termo:
         try:
             termo = int(termo)
@@ -37,8 +25,7 @@ elif opcao == "Buscar Produto":
         resultado = buscar_produto(termo)
         st.dataframe(resultado)
 
-# Adicionar produto
-elif opcao == "Adicionar Produto":
+def adicionar():
     st.subheader("➕ Adicionar Novo Produto")
     with st.form("form_adicionar"):
         nome = st.text_input("Nome do Produto")
@@ -59,8 +46,7 @@ elif opcao == "Adicionar Produto":
         adicionar_produto(novo_produto)
         st.success(f"Produto '{nome}' adicionado com sucesso!")
 
-# Editar produto
-elif opcao == "Editar Produto":
+def editar():
     st.subheader("✏️ Editar Produto Existente")
     id_edit = st.number_input("ID do Produto a Editar", min_value=1, step=1)
     produto_encontrado = buscar_produto(int(id_edit))
@@ -86,11 +72,31 @@ elif opcao == "Editar Produto":
     else:
         st.warning("ID não encontrado.")
 
-# Remover produto
-elif opcao == "Remover Produto":
+def remover():
     st.subheader("🗑️ Remover Produto")
     id_remover = st.number_input("ID do Produto a Remover", min_value=1, step=1)
     if st.button("Remover"):
         remover_produto(int(id_remover))
         st.success("Produto removido com sucesso!")
 
+# Menu lateral
+
+st.sidebar.title("Menu")
+opcao = st.sidebar.selectbox("Escolha uma ação:", [
+    "Visualizar Produtos",
+    "Buscar Produto",
+    "Adicionar Produto",
+    "Editar Produto",
+    "Remover Produto"
+])
+
+if opcao == "Visualizar Produtos":
+    visualizar_produtos(df)
+elif opcao == "Buscar Produto":
+    buscar()
+elif opcao == "Adicionar Produto":
+    adicionar()
+elif opcao == "Editar Produto":
+    editar()
+elif opcao == "Remover Produto":
+    remover()
