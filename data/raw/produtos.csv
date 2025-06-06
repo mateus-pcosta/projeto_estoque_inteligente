@@ -1,16 +1,17 @@
 id_produto,nome,categoria,preco_unitario,estoque_atual,vendidos_ultimos_30_dias
-1,Coca-Cola 2L,Bebidas,8.50,25,50
-2,Guaraná Antarctica 2L,Bebidas,7.90,30,40
-3,Pastel de Carne,Salgados,6.00,15,20
-4,Pastel de Queijo,Salgados,6.00,10,18
-5,X-Burguer,Lanches,12.00,20,35
-6,X-Salada,Lanches,13.50,18,28
-7,Porção de Batata Frita,Porções,10.00,12,22
-8,Água Mineral 500ml,Bebidas,3.00,50,45
-9,Suco Natural 300ml,Bebidas,5.50,22,30
-10,Refrigerante Lata,Bebidas,4.50,60,65
-11,Cerveja Lata,Bebidas,5.00,35,48
-12,Esfirra de Frango,Salgados,5.00,18,25
-13,Bolo de Chocolate,Sobremesas,4.00,16,19
-14,Pudim de Leite,Sobremesas,4.50,12,17
-15,Café Expresso,Bebidas,3.50,80,70
+1,Coca-Cola 2L,Bebidas,8.5,25,50
+2,Guaraná Antarctica 2L,Bebidas,7.9,30,40
+3,Pastel de Carne,Salgados,6.0,15,20
+4,Pastel de Queijo,Salgados,6.0,10,18
+5,X-Burguer,Lanches,12.0,20,35
+6,X-Salada,Lanches,13.5,18,28
+7,Porção de Batata Frita,Porções,10.0,12,22
+8,Água Mineral 500ml,Bebidas,3.0,50,45
+9,Suco Natural 300ml,Bebidas,5.5,22,30
+10,Refrigerante Lata,Bebidas,4.5,60,65
+11,Cerveja Lata,Bebidas,5.0,35,48
+12,Esfirra de Frango,Salgados,5.0,18,25
+13,Bolo de Chocolate,Sobremesas,4.0,16,19
+14,Pudim de Leite,Sobremesas,4.5,12,17
+15,Café Expresso,Bebidas,3.5,80,70
+17,Banana,Frutas,1.2,30,10
