@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from utils.helpers import formatar_preco, formatar_nomes_colunas
 from core.gerenciamento_estoque import (
     carregar_produtos, adicionar_produto,
     editar_produto, remover_produto, buscar_produto
@@ -12,7 +13,13 @@ df = carregar_produtos()
 
 def visualizar_produtos(df):
     st.subheader("📋 Lista de Produtos no Estoque")
-    st.dataframe(df)
+    
+    df_formatado = df.copy()
+    df_formatado["preco_unitario"] = df_formatado["preco_unitario"].apply(formatar_preco)
+    
+    df_formatado = formatar_nomes_colunas(df_formatado)
+    
+    st.dataframe(df_formatado)
 
 def buscar():
     st.subheader("🔍 Buscar Produto")

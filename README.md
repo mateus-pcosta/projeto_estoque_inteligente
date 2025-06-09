@@ -42,21 +42,30 @@ Sistema de controle de estoque simples e inteligente para pequenos comércios. D
 ```bash
 projeto_estoque_inteligente/
 │
-├── core/               # Módulos principais do sistema
-│   ├── gerenciamento_estoque.py  # Controle de estoque (CRUD, alertas)
-│   ├── previsao_demanda.py       # Modelos de IA para previsão
-│   └── relatorios.py             # Geração de gráficos/relatórios
+├── core/                          # Módulos principais do sistema
+│   ├── gerenciamento_estoque.py  # Controle de estoque (CRUD, alertas, manipulação dos dados dos produtos)
+│   ├── previsao_demanda.py       # Modelos de IA para previsão de demanda e comportamento do estoque
+│   ├── relatorios.py             # Geração de gráficos, relatórios e visualizações para análise
+│   ├── __init__.py               # Inicializador do pacote core (pode ficar vazio)
+│   └── __pycache__/              # Cache dos arquivos compilados Python (gerado automaticamente)
 │
-├── data/               # Gestão de dados
-│   ├── processed/      # Dados processados (ex: previsões geradas)
-│   └── raw/           # Dados originais (nunca alterados manualmente)
-│       └── produtos.csv  # Base de produtos inicial
+├── data/                         # Gestão e armazenamento dos dados
+│   ├── processed/                # Dados processados, resultados de previsões, arquivos intermediários
+│   └── raw/                     # Dados originais, nunca alterados manualmente
+│       └── produtos.csv          # Base de dados inicial dos produtos em CSV
 │
-├── tests/              # Testes automatizados
-│   ├── integracao/     # Testes de integração entre módulos
-│   └── unitarios/      # Testes unitários
-│       └── visualizacao_simples.py  # Teste da visualização básica
+├── tests/                        # Testes automatizados para garantir qualidade e funcionamento
+│   ├── integracao/               # Testes de integração entre módulos do sistema
+│   └── unitarios/                # Testes unitários focados em funções específicas
+│       └── visualizacao_simples.py  # Teste da visualização básica dos dados CSV
 │
-└── utils/              # Código compartilhado
-    ├── config.py       # Configurações globais
-    └── helpers.py      # Funções auxiliares reutilizáveis
+├── utils/                        # Código compartilhado e funções auxiliares reutilizáveis
+│   ├── config.py                 # Configurações globais e constantes do sistema
+│   ├── helpers.py                # Funções auxiliares e utilitárias para o projeto
+│   └── __init__.py               # Inicializador do pacote utils (pode ficar vazio)
+│
+├── app.py                       # Aplicação principal do Streamlit (interface web do sistema)
+├── .gitignore                   # Arquivos/pastas ignorados pelo Git (ex: __pycache__, .env)
+├── README.md                    # Documentação básica do projeto
+├── requirements.txt             # Dependências Python para o ambiente do projeto
+
