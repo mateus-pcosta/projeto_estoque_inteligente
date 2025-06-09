@@ -1,0 +1,3 @@
+id_movimentacao,id_produto,tipo,quantidade,data,usuario,observacao
+1,1,entrada,50,2023-11-01,Sistema,Compra inicial
+2,1,saida,25,2023-11-02,Sistema,Venda PDV-001
