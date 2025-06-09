@@ -68,4 +68,3 @@ projeto_estoque_inteligente/
 ├── .gitignore                   # Arquivos/pastas ignorados pelo Git (ex: __pycache__, .env)
 ├── README.md                    # Documentação básica do projeto
 ├── requirements.txt             # Dependências Python para o ambiente do projeto
-
