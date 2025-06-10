@@ -1,25 +1,15 @@
 import streamlit as st
 import pandas as pd
-from utils.helpers import formatar_preco, formatar_nomes_colunas
+from datetime import datetime
+from utils.helpers import formatar_preco, formatar_nomes_colunas, formatar_colunas_historico
 from core.gerenciamento_estoque import (
-    carregar_produtos, adicionar_produto,
-    editar_produto, remover_produto, buscar_produto
+    carregar_produtos, adicionar_produto, editar_produto,
+    remover_produto, buscar_produto, registrar_movimentacao,
+    verificar_estoque_baixo, carregar_movimentacoes
 )
 
 st.set_page_config(page_title="Estoque Inteligente", layout="wide")
-st.title("📦 Estoque Inteligente — Gestão de Produtos")
-
-df = carregar_produtos()
-
-def visualizar_produtos(df):
-    st.subheader("📋 Lista de Produtos no Estoque")
-    
-    df_formatado = df.copy()
-    df_formatado["preco_unitario"] = df_formatado["preco_unitario"].apply(formatar_preco)
-    
-    df_formatado = formatar_nomes_colunas(df_formatado)
-    
-    st.dataframe(df_formatado)
+st.title("📦 Estoque Inteligente")
 
 def buscar():
     st.subheader("🔍 Buscar Produto")
@@ -39,7 +29,6 @@ def adicionar():
         categoria = st.text_input("Categoria")
         preco = st.number_input("Preço Unitário", min_value=0.0, step=0.01)
         estoque = st.number_input("Estoque Atual", min_value=0)
-        vendidos = st.number_input("Vendidos nos Últimos 30 Dias", min_value=0)
         enviar = st.form_submit_button("Adicionar")
 
     if enviar:
@@ -47,8 +36,7 @@ def adicionar():
             "nome": nome,
             "categoria": categoria,
             "preco_unitario": preco,
-            "estoque_atual": estoque,
-            "vendidos_ultimos_30_dias": vendidos
+            "estoque_atual": estoque
         }
         adicionar_produto(novo_produto)
         st.success(f"Produto '{nome}' adicionado com sucesso!")
@@ -63,7 +51,6 @@ def editar():
             categoria = st.text_input("Categoria", produto_encontrado.iloc[0]["categoria"])
             preco = st.number_input("Preço", value=produto_encontrado.iloc[0]["preco_unitario"], step=0.01)
             estoque = st.number_input("Estoque", value=produto_encontrado.iloc[0]["estoque_atual"])
-            vendidos = st.number_input("Vendidos", value=produto_encontrado.iloc[0]["vendidos_ultimos_30_dias"])
             enviar = st.form_submit_button("Salvar Alterações")
 
         if enviar:
@@ -71,8 +58,7 @@ def editar():
                 "nome": nome,
                 "categoria": categoria,
                 "preco_unitario": preco,
-                "estoque_atual": estoque,
-                "vendidos_ultimos_30_dias": vendidos
+                "estoque_atual": estoque
             }
             editar_produto(int(id_edit), novos_dados)
             st.success("Produto atualizado com sucesso!")
@@ -86,24 +72,90 @@ def remover():
         remover_produto(int(id_remover))
         st.success("Produto removido com sucesso!")
 
-# Menu lateral
+def visualizar_produtos():
+    st.subheader("📋 Lista de Produtos")
+    produtos = carregar_produtos()
+    
+    produtos["preco_unitario"] = produtos["preco_unitario"].apply(formatar_preco)
+    produtos = formatar_nomes_colunas(produtos)
+    
+    estoque_baixo = verificar_estoque_baixo()
+    if not estoque_baixo.empty:
+        st.warning(f"⚠️ {len(estoque_baixo)} produto(s) com estoque baixo:")
+        st.dataframe(estoque_baixo[["Id do produto", "Nome", "Estoque Atual"]])
+    
+    st.dataframe(produtos)
 
-st.sidebar.title("Menu")
-opcao = st.sidebar.selectbox("Escolha uma ação:", [
-    "Visualizar Produtos",
-    "Buscar Produto",
-    "Adicionar Produto",
-    "Editar Produto",
-    "Remover Produto"
-])
+def tela_movimentacao():
+    st.subheader("🔄 Movimentação de Estoque")
+    produtos = carregar_produtos()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        produto_nome = st.selectbox(
+            "Selecione o Produto:",
+            options=produtos["nome"],
+            format_func=lambda x: f"{x} (Estoque: {produtos[produtos['nome'] == x]['estoque_atual'].values[0]})"
+        )
+        id_produto = produtos[produtos["nome"] == produto_nome]["id_produto"].values[0]
+    
+    with col2:
+        quantidade = st.number_input("Quantidade:", min_value=1, value=1)
+        observacao = st.text_input("Observação/Motivo:")
+    
+    col_entrada, col_saida, _ = st.columns([1, 1, 2])
+    with col_entrada:
+        if st.button("🔼 Registrar Entrada", help="Adiciona itens ao estoque"):
+            if registrar_movimentacao(id_produto, "entrada", quantidade, observacao=observacao):
+                st.success("Entrada registrada com sucesso!")
+    
+    with col_saida:
+        if st.button("🔽 Registrar Saída", help="Remove itens do estoque"):
+            if registrar_movimentacao(id_produto, "saida", quantidade, observacao=observacao):
+                st.success("Saída registrada com sucesso!")
 
-if opcao == "Visualizar Produtos":
-    visualizar_produtos(df)
-elif opcao == "Buscar Produto":
-    buscar()
-elif opcao == "Adicionar Produto":
-    adicionar()
-elif opcao == "Editar Produto":
-    editar()
-elif opcao == "Remover Produto":
-    remover()
+def tela_historico():
+    st.subheader("📜 Histórico de Movimentações")
+    
+    try:
+        movimentacoes = carregar_movimentacoes()
+        if not movimentacoes.empty:
+            # Tenta converter com formato completo, depois apenas data, caso falhe
+            try:
+                movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed')
+            except:
+                movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], errors='coerce')
+            
+            # Filtra linhas com datas inválidas
+            movimentacoes = movimentacoes.dropna(subset=['data'])
+
+            movimentacoes["data_formatada"] = movimentacoes["data"].dt.strftime("%d/%m/%Y %H:%M")
+            
+            movimentacoes = formatar_colunas_historico(movimentacoes)
+        
+            st.dataframe(
+                movimentacoes.sort_values("Data", ascending=False).drop(columns="Data"),
+                column_config={"Data/Hora": "Data/Hora"}
+            )
+        else:
+            st.warning("Nenhuma movimentação registrada ainda")
+    except Exception as e:
+        st.error(f"Erro ao carregar histórico: {str(e)}")
+
+opcoes_menu = {
+    "Visualizar Produtos": visualizar_produtos,
+    "Movimentação de Estoque": tela_movimentacao,
+    "Histórico de Movimentações": tela_historico,
+    "Buscar Produto": buscar,
+    "Adicionar Produto": adicionar,
+    "Editar Produto": editar,
+    "Remover Produto": remover
+}
+
+def main():
+    st.sidebar.title("Menu")
+    opcao_selecionada = st.sidebar.selectbox("Escolha uma ação:", list(opcoes_menu.keys()))
+    opcoes_menu[opcao_selecionada]()
+
+if __name__ == "__main__":
+    main()

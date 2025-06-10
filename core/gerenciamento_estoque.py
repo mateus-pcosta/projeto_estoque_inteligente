@@ -1,47 +1,110 @@
 import pandas as pd
 import os
+from datetime import datetime
 
 CSV_PATH = "data/raw/produtos.csv"
+MOVIMENTACOES_PATH = "data/raw/movimentacoes.csv"
 
 def carregar_produtos():
     if os.path.exists(CSV_PATH):
         return pd.read_csv(CSV_PATH)
-    else:
-        print("Arquivo de produtos não encontrado.")
-        return pd.DataFrame()
+    return pd.DataFrame(columns=["id_produto", "nome", "categoria", "preco_unitario", "estoque_atual"])
 
 def salvar_produtos(df):
+    os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
     df.to_csv(CSV_PATH, index=False)
+
+def carregar_movimentacoes():
+    if os.path.exists(MOVIMENTACOES_PATH):
+        return pd.read_csv(MOVIMENTACOES_PATH)
+    return pd.DataFrame(columns=["id_movimentacao", "id_produto", "tipo", "quantidade", "data", "usuario", "observacao"])
+
+def salvar_movimentacoes(df):
+    os.makedirs(os.path.dirname(MOVIMENTACOES_PATH), exist_ok=True)
+    df.to_csv(MOVIMENTACOES_PATH, index=False)
+
+def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", observacao=""):
+    try:
+        produtos = carregar_produtos()
+        movimentacoes = carregar_movimentacoes()
+        
+        if id_produto not in produtos["id_produto"].values:
+            raise ValueError("ID de produto inválido")
+        
+        if tipo == "saida":
+            estoque_atual = produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"].values[0]
+            if estoque_atual < quantidade:
+                raise ValueError("Quantidade indisponível em estoque")
+        
+        # Nova movimentação
+        nova_id = movimentacoes["id_movimentacao"].max() + 1 if not movimentacoes.empty else 1
+        nova_mov = pd.DataFrame([{
+            "id_movimentacao": nova_id,
+            "id_produto": id_produto,
+            "tipo": tipo,
+            "quantidade": quantidade,
+            "data": datetime.now().isoformat(sep=' ', timespec='seconds'),
+            "usuario": usuario,
+            "observacao": observacao
+        }])
+        
+        # Atualiza estoque
+        if tipo == "entrada":
+            produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"] += quantidade
+        else:
+            produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"] -= quantidade
+        
+        # Salva tudo
+        movimentacoes = pd.concat([movimentacoes, nova_mov], ignore_index=True)
+        salvar_movimentacoes(movimentacoes)
+        salvar_produtos(produtos)
+        return True
+    except Exception as e:
+        print(f"Erro ao registrar movimentação: {str(e)}")
+        return False
 
 def adicionar_produto(produto):
     df = carregar_produtos()
     novo_id = df["id_produto"].max() + 1 if not df.empty else 1
     produto["id_produto"] = novo_id
+    produto["estoque_atual"] = produto.get("estoque_atual", 0)  # Garante estoque inicial
     df = pd.concat([df, pd.DataFrame([produto])], ignore_index=True)
     salvar_produtos(df)
-    print(f"Produto '{produto['nome']}' adicionado com ID {novo_id}.")
+    return novo_id
 
 def editar_produto(id_produto, novos_dados):
     df = carregar_produtos()
-    if id_produto in df["id_produto"].values:
-        df.loc[df["id_produto"] == id_produto, novos_dados.keys()] = list(novos_dados.values())
-        salvar_produtos(df)
-        print(f"Produto ID {id_produto} atualizado.")
-    else:
-        print(f"Produto ID {id_produto} não encontrado.")
+    if id_produto not in df["id_produto"].values:
+        raise ValueError("ID de produto não encontrado")
+    
+    for chave, valor in novos_dados.items():
+        if chave in df.columns:
+            df.loc[df["id_produto"] == id_produto, chave] = valor
+    
+    salvar_produtos(df)
+    return True
 
 def remover_produto(id_produto):
     df = carregar_produtos()
-    if id_produto in df["id_produto"].values:
-        df = df[df["id_produto"] != id_produto]
-        salvar_produtos(df)
-        print(f"Produto ID {id_produto} removido.")
-    else:
-        print(f"Produto ID {id_produto} não encontrado.")
+    if id_produto not in df["id_produto"].values:
+        raise ValueError("ID de produto não encontrado")
+    df = df[df["id_produto"] != id_produto]
+    salvar_produtos(df)
+    return True
 
-def buscar_produto(pesquisa):
+def buscar_produto(termo):
     df = carregar_produtos()
-    if isinstance(pesquisa, int):
-        return df[df["id_produto"] == pesquisa]
+    if isinstance(termo, int):
+        resultado = df[df["id_produto"] == termo]
     else:
-        return df[df["nome"].str.contains(pesquisa, case=False) | df["categoria"].str.contains(pesquisa, case=False)]
+        termo = termo.lower()
+        mask = (
+            df["nome"].str.lower().str.contains(termo) |
+            df["categoria"].str.lower().str.contains(termo)
+        )
+        resultado = df[mask]
+    return resultado
+
+def verificar_estoque_baixo(limite=10):
+    df = carregar_produtos()
+    return df[df['estoque_atual'] < limite]
