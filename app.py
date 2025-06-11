@@ -11,16 +11,6 @@ from core.gerenciamento_estoque import (
 st.set_page_config(page_title="Estoque Inteligente", layout="wide")
 st.title("📦 Estoque Inteligente")
 
-def buscar():
-    st.subheader("🔍 Buscar Produto")
-    termo = st.text_input("Digite nome, categoria ou ID:")
-    if termo:
-        try:
-            termo = int(termo)
-        except ValueError:
-            pass
-        resultado = buscar_produto(termo)
-        st.dataframe(resultado)
 
 def adicionar():
     st.subheader("➕ Adicionar Novo Produto")
@@ -74,22 +64,68 @@ def remover():
 
 def visualizar_produtos():
     st.subheader("📋 Lista de Produtos")
+
     produtos = carregar_produtos()
-    
-    produtos["preco_unitario"] = produtos["preco_unitario"].apply(formatar_preco)
-    produtos = formatar_nomes_colunas(produtos)
-    
+    produtos_raw = produtos.copy()
+
+    # Filtros na barra lateral
+    categorias = produtos_raw["categoria"].dropna().unique()
+    categoria_selecionada = st.sidebar.selectbox("Categoria:", options=["Todas"] + list(categorias))
+
+    preco_min = float(produtos_raw["preco_unitario"].min())
+    preco_max = float(produtos_raw["preco_unitario"].max())
+    faixa_preco = st.sidebar.slider(
+        "Faixa de Preço (R$):", min_value=preco_min, max_value=preco_max,
+        value=(preco_min, preco_max), step=0.01
+    )
+
+    estoque_min = int(produtos_raw["estoque_atual"].min())
+    estoque_max = int(produtos_raw["estoque_atual"].max())
+    faixa_estoque = st.sidebar.slider(
+        "Estoque Atual:", min_value=estoque_min, max_value=estoque_max,
+        value=(estoque_min, estoque_max), step=1
+    )
+
+    termo = st.text_input("🔍 Buscar por nome, categoria ou ID:")
+
+    produtos_filtrados = produtos_raw.copy()
+
+    if categoria_selecionada != "Todas":
+        produtos_filtrados = produtos_filtrados[produtos_filtrados["categoria"] == categoria_selecionada]
+
+    produtos_filtrados = produtos_filtrados[
+        (produtos_filtrados["preco_unitario"] >= faixa_preco[0]) &
+        (produtos_filtrados["preco_unitario"] <= faixa_preco[1]) &
+        (produtos_filtrados["estoque_atual"] >= faixa_estoque[0]) &
+        (produtos_filtrados["estoque_atual"] <= faixa_estoque[1])
+    ]
+
+    if termo:
+        termo_lower = termo.lower()
+        try:
+            termo_int = int(termo)
+            produtos_filtrados = produtos_filtrados[produtos_filtrados["id_produto"] == termo_int]
+        except ValueError:
+            produtos_filtrados = produtos_filtrados[
+                produtos_filtrados["nome"].str.lower().str.contains(termo_lower) |
+                produtos_filtrados["categoria"].str.lower().str.contains(termo_lower)
+            ]
+
+    produtos_filtrados["preco_unitario"] = produtos_filtrados["preco_unitario"].apply(formatar_preco)
+    produtos_filtrados = formatar_nomes_colunas(produtos_filtrados)
+
     estoque_baixo = verificar_estoque_baixo()
     if not estoque_baixo.empty:
         st.warning(f"⚠️ {len(estoque_baixo)} produto(s) com estoque baixo:")
+        estoque_baixo = formatar_nomes_colunas(estoque_baixo)
         st.dataframe(estoque_baixo[["Id do produto", "Nome", "Estoque Atual"]])
-    
-    st.dataframe(produtos)
+
+    st.dataframe(produtos_filtrados)
 
 def tela_movimentacao():
     st.subheader("🔄 Movimentação de Estoque")
     produtos = carregar_produtos()
-    
+
     col1, col2 = st.columns(2)
     with col1:
         produto_nome = st.selectbox(
@@ -98,17 +134,17 @@ def tela_movimentacao():
             format_func=lambda x: f"{x} (Estoque: {produtos[produtos['nome'] == x]['estoque_atual'].values[0]})"
         )
         id_produto = produtos[produtos["nome"] == produto_nome]["id_produto"].values[0]
-    
+
     with col2:
         quantidade = st.number_input("Quantidade:", min_value=1, value=1)
         observacao = st.text_input("Observação/Motivo:")
-    
+
     col_entrada, col_saida, _ = st.columns([1, 1, 2])
     with col_entrada:
         if st.button("🔼 Registrar Entrada", help="Adiciona itens ao estoque"):
             if registrar_movimentacao(id_produto, "entrada", quantidade, observacao=observacao):
                 st.success("Entrada registrada com sucesso!")
-    
+
     with col_saida:
         if st.button("🔽 Registrar Saída", help="Remove itens do estoque"):
             if registrar_movimentacao(id_produto, "saida", quantidade, observacao=observacao):
@@ -116,23 +152,19 @@ def tela_movimentacao():
 
 def tela_historico():
     st.subheader("📜 Histórico de Movimentações")
-    
+
     try:
         movimentacoes = carregar_movimentacoes()
         if not movimentacoes.empty:
-            # Tenta converter com formato completo, depois apenas data, caso falhe
             try:
                 movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed')
             except:
                 movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], errors='coerce')
-            
-            # Filtra linhas com datas inválidas
-            movimentacoes = movimentacoes.dropna(subset=['data'])
 
+            movimentacoes = movimentacoes.dropna(subset=['data'])
             movimentacoes["data_formatada"] = movimentacoes["data"].dt.strftime("%d/%m/%Y %H:%M")
-            
             movimentacoes = formatar_colunas_historico(movimentacoes)
-        
+
             st.dataframe(
                 movimentacoes.sort_values("Data", ascending=False).drop(columns="Data"),
                 column_config={"Data/Hora": "Data/Hora"}
@@ -142,11 +174,11 @@ def tela_historico():
     except Exception as e:
         st.error(f"Erro ao carregar histórico: {str(e)}")
 
+
 opcoes_menu = {
     "Visualizar Produtos": visualizar_produtos,
     "Movimentação de Estoque": tela_movimentacao,
     "Histórico de Movimentações": tela_historico,
-    "Buscar Produto": buscar,
     "Adicionar Produto": adicionar,
     "Editar Produto": editar,
     "Remover Produto": remover
@@ -155,6 +187,11 @@ opcoes_menu = {
 def main():
     st.sidebar.title("Menu")
     opcao_selecionada = st.sidebar.selectbox("Escolha uma ação:", list(opcoes_menu.keys()))
+
+    if opcao_selecionada == "Visualizar Produtos":
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔎 Filtros")  # Aparece só nessa aba
+
     opcoes_menu[opcao_selecionada]()
 
 if __name__ == "__main__":

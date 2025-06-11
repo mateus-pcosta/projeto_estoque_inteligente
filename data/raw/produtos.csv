@@ -14,4 +14,4 @@ id_produto,nome,categoria,preco_unitario,estoque_atual,vendidos_ultimos_30_dias
 13,Bolo de Chocolate,Sobremesas,4.0,16,19
 14,Pudim de Leite,Sobremesas,4.5,12,17
 15,Café Expresso,Bebidas,3.5,80,70
-17,Banana,Frutas,1.2,30,10
+17,Banana,Frutas,1.2,40,10

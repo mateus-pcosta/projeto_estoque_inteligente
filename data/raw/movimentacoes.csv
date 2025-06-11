@@ -6,3 +6,4 @@ id_movimentacao,id_produto,tipo,quantidade,data,usuario,observacao
 5,5,entrada,10,2025-06-10 11:26:46,Sistema,Entrou
 6,1,entrada,2,2025-06-10 11:37:15,Sistema,
 7,1,entrada,2,2025-06-10 11:37:49,Sistema,
+8,17,entrada,10,2025-06-10 12:10:51,Sistema,

@@ -4,7 +4,7 @@ def formatar_preco(valor):
 def formatar_nomes_colunas(df):
     df = df.copy()
     nomes_personalizados = {
-        "id_produto": "Id Produto",
+        "id_produto": "ID Produto",
         "nome": "Nome",
         "categoria": "Categoria",
         "preco_unitario": "Preço Unitário",
