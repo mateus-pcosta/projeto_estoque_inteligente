@@ -139,16 +139,43 @@ def tela_movimentacao():
         quantidade = st.number_input("Quantidade:", min_value=1, value=1)
         observacao = st.text_input("Observação/Motivo:")
 
+    # Checkbox para venda (só relevante para saídas)
+    foi_venda = st.checkbox("Essa saída foi uma venda?", value=False)
+
     col_entrada, col_saida, _ = st.columns([1, 1, 2])
+    
     with col_entrada:
         if st.button("🔼 Registrar Entrada", help="Adiciona itens ao estoque"):
-            if registrar_movimentacao(id_produto, "entrada", quantidade, observacao=observacao):
-                st.success("Entrada registrada com sucesso!")
+            try:
+                resultado = registrar_movimentacao(
+                    id_produto=id_produto,
+                    tipo="entrada",
+                    quantidade=quantidade,
+                    observacao=observacao
+                )
+                if resultado:
+                    st.success("✅ Entrada registrada com sucesso!")
+                else:
+                    st.error("❌ Falha ao registrar entrada")
+            except Exception as e:
+                st.error(f"Erro: {str(e)}")
 
     with col_saida:
         if st.button("🔽 Registrar Saída", help="Remove itens do estoque"):
-            if registrar_movimentacao(id_produto, "saida", quantidade, observacao=observacao):
-                st.success("Saída registrada com sucesso!")
+            try:
+                resultado = registrar_movimentacao(
+                    id_produto=id_produto,
+                    tipo="saida",
+                    quantidade=quantidade,
+                    observacao=observacao,
+                    venda=foi_venda
+                )
+                if resultado:
+                    st.success("✅ Saída registrada com sucesso!")
+                else:
+                    st.error("❌ Falha ao registrar saída")
+            except Exception as e:
+                st.error(f"Erro: {str(e)}")
 
 def tela_historico():
     st.subheader("📜 Histórico de Movimentações")

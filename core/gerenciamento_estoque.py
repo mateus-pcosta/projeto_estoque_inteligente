@@ -7,8 +7,11 @@ MOVIMENTACOES_PATH = "data/raw/movimentacoes.csv"
 
 def carregar_produtos():
     if os.path.exists(CSV_PATH):
-        return pd.read_csv(CSV_PATH)
-    return pd.DataFrame(columns=["id_produto", "nome", "categoria", "preco_unitario", "estoque_atual"])
+        df = pd.read_csv(CSV_PATH)
+        if "vendidos_ultimos_30_dias" not in df.columns:
+            df["vendidos_ultimos_30_dias"] = 0
+        return df
+    return pd.DataFrame(columns=["id_produto", "nome", "categoria", "preco_unitario", "estoque_atual", "vendidos_ultimos_30_dias"])
 
 def salvar_produtos(df):
     os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
@@ -23,7 +26,7 @@ def salvar_movimentacoes(df):
     os.makedirs(os.path.dirname(MOVIMENTACOES_PATH), exist_ok=True)
     df.to_csv(MOVIMENTACOES_PATH, index=False)
 
-def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", observacao=""):
+def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", observacao="", venda=False):
     try:
         produtos = carregar_produtos()
         movimentacoes = carregar_movimentacoes()
@@ -36,7 +39,6 @@ def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", obse
             if estoque_atual < quantidade:
                 raise ValueError("Quantidade indisponível em estoque")
         
-        # Nova movimentação
         nova_id = movimentacoes["id_movimentacao"].max() + 1 if not movimentacoes.empty else 1
         nova_mov = pd.DataFrame([{
             "id_movimentacao": nova_id,
@@ -48,13 +50,15 @@ def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", obse
             "observacao": observacao
         }])
         
-        # Atualiza estoque
         if tipo == "entrada":
             produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"] += quantidade
         else:
             produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"] -= quantidade
-        
-        # Salva tudo
+
+            # Se for uma venda, atualiza a coluna vendidos_ultimos_30_dias
+            if venda:
+                produtos.loc[produtos["id_produto"] == id_produto, "vendidos_ultimos_30_dias"] += quantidade
+
         movimentacoes = pd.concat([movimentacoes, nova_mov], ignore_index=True)
         salvar_movimentacoes(movimentacoes)
         salvar_produtos(produtos)
@@ -67,7 +71,8 @@ def adicionar_produto(produto):
     df = carregar_produtos()
     novo_id = df["id_produto"].max() + 1 if not df.empty else 1
     produto["id_produto"] = novo_id
-    produto["estoque_atual"] = produto.get("estoque_atual", 0)  # Garante estoque inicial
+    produto["estoque_atual"] = produto.get("estoque_atual", 0)
+    produto["vendidos_ultimos_30_dias"] = 0
     df = pd.concat([df, pd.DataFrame([produto])], ignore_index=True)
     salvar_produtos(df)
     return novo_id
