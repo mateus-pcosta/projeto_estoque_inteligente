@@ -1,2 +1,7 @@
-__pycache__/
+_pycache_/
 *.pyc
+
+# Arquivo de configuração com chaves sensíveis
+.env
+.env.local
+.env.production
