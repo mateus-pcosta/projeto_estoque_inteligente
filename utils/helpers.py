@@ -19,9 +19,11 @@ def formatar_colunas_historico(df):
     nomes_personalizados = {
         "id_movimentacao": "ID Movimentação",
         "id_produto": "ID Produto",
+        "nome": "Nome",
+        "categoria": "Categoria",
         "tipo": "Tipo",
         "quantidade": "Quantidade",
-        "data": "Data",
+        "data": "Data",  # Usado internamente para ordenar
         "data_formatada": "Data/Hora",
         "usuario": "Usuário",
         "observacao": "Observação"

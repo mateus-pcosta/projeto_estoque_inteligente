@@ -11,7 +11,6 @@ from core.gerenciamento_estoque import (
 st.set_page_config(page_title="Estoque Inteligente", layout="wide")
 st.title("📦 Estoque Inteligente")
 
-
 def adicionar():
     st.subheader("➕ Adicionar Novo Produto")
     with st.form("form_adicionar"):
@@ -63,64 +62,50 @@ def remover():
         st.success("Produto removido com sucesso!")
 
 def visualizar_produtos():
-    st.subheader("📋 Lista de Produtos")
+    st.subheader("📦 Produtos em Estoque")
 
-    produtos = carregar_produtos()
-    produtos_raw = produtos.copy()
+    try:
+        produtos = carregar_produtos()
 
-    # Filtros na barra lateral
-    categorias = produtos_raw["categoria"].dropna().unique()
-    categoria_selecionada = st.sidebar.selectbox("Categoria:", options=["Todas"] + list(categorias))
+        if produtos.empty:
+            st.warning("Nenhum produto encontrado.")
+            return
 
-    preco_min = float(produtos_raw["preco_unitario"].min())
-    preco_max = float(produtos_raw["preco_unitario"].max())
-    faixa_preco = st.sidebar.slider(
-        "Faixa de Preço (R$):", min_value=preco_min, max_value=preco_max,
-        value=(preco_min, preco_max), step=0.01
-    )
+        categorias = produtos["categoria"].dropna().unique()
+        categoria_filtro = st.sidebar.multiselect("Categoria", categorias, default=list(categorias))
 
-    estoque_min = int(produtos_raw["estoque_atual"].min())
-    estoque_max = int(produtos_raw["estoque_atual"].max())
-    faixa_estoque = st.sidebar.slider(
-        "Estoque Atual:", min_value=estoque_min, max_value=estoque_max,
-        value=(estoque_min, estoque_max), step=1
-    )
+        preco_min = float(produtos["preco_unitario"].min())
+        preco_max = float(produtos["preco_unitario"].max())
+        faixa_preco = st.sidebar.slider("Faixa de Preço (R$)", min_value=preco_min, max_value=preco_max, value=(preco_min, preco_max))
 
-    termo = st.text_input("🔍 Buscar por nome, categoria ou ID:")
+        estoque_min = int(produtos["estoque_atual"].min())
+        estoque_max = int(produtos["estoque_atual"].max())
+        faixa_estoque = st.sidebar.slider("Estoque Atual", min_value=estoque_min, max_value=estoque_max, value=(estoque_min, estoque_max))
 
-    produtos_filtrados = produtos_raw.copy()
+        df_filtrado = produtos[
+            (produtos["categoria"].isin(categoria_filtro)) &
+            (produtos["preco_unitario"] >= faixa_preco[0]) &
+            (produtos["preco_unitario"] <= faixa_preco[1]) &
+            (produtos["estoque_atual"] >= faixa_estoque[0]) &
+            (produtos["estoque_atual"] <= faixa_estoque[1])
+        ]
 
-    if categoria_selecionada != "Todas":
-        produtos_filtrados = produtos_filtrados[produtos_filtrados["categoria"] == categoria_selecionada]
-
-    produtos_filtrados = produtos_filtrados[
-        (produtos_filtrados["preco_unitario"] >= faixa_preco[0]) &
-        (produtos_filtrados["preco_unitario"] <= faixa_preco[1]) &
-        (produtos_filtrados["estoque_atual"] >= faixa_estoque[0]) &
-        (produtos_filtrados["estoque_atual"] <= faixa_estoque[1])
-    ]
-
-    if termo:
-        termo_lower = termo.lower()
-        try:
-            termo_int = int(termo)
-            produtos_filtrados = produtos_filtrados[produtos_filtrados["id_produto"] == termo_int]
-        except ValueError:
-            produtos_filtrados = produtos_filtrados[
-                produtos_filtrados["nome"].str.lower().str.contains(termo_lower) |
-                produtos_filtrados["categoria"].str.lower().str.contains(termo_lower)
+        termo_busca = st.text_input("🔎 Buscar por Nome ou Categoria:")
+        if termo_busca:
+            termo = termo_busca.lower()
+            df_filtrado = df_filtrado[
+                df_filtrado["nome"].str.lower().str.contains(termo) |
+                df_filtrado["categoria"].str.lower().str.contains(termo)
             ]
 
-    produtos_filtrados["preco_unitario"] = produtos_filtrados["preco_unitario"].apply(formatar_preco)
-    produtos_filtrados = formatar_nomes_colunas(produtos_filtrados)
+        # Formata colunas
+        df_formatado = formatar_nomes_colunas(df_filtrado)
+        df_formatado["Preço Unitário"] = df_formatado["Preço Unitário"].apply(formatar_preco)
 
-    estoque_baixo = verificar_estoque_baixo()
-    if not estoque_baixo.empty:
-        st.warning(f"⚠️ {len(estoque_baixo)} produto(s) com estoque baixo:")
-        estoque_baixo = formatar_nomes_colunas(estoque_baixo)
-        st.dataframe(estoque_baixo[["Id do produto", "Nome", "Estoque Atual"]])
+        st.dataframe(df_formatado.sort_values("Nome"))
 
-    st.dataframe(produtos_filtrados)
+    except Exception as e:
+        st.error(f"Erro ao carregar produtos: {str(e)}")
 
 def tela_movimentacao():
     st.subheader("🔄 Movimentação de Estoque")
@@ -139,7 +124,7 @@ def tela_movimentacao():
         quantidade = st.number_input("Quantidade:", min_value=1, value=1)
         observacao = st.text_input("Observação/Motivo:")
 
-    # Checkbox para venda (só relevante para saídas)
+    # Checkbox para venda 
     foi_venda = st.checkbox("Essa saída foi uma venda?", value=False)
 
     col_entrada, col_saida, _ = st.columns([1, 1, 2])
@@ -182,7 +167,10 @@ def tela_historico():
 
     try:
         movimentacoes = carregar_movimentacoes()
+        produtos = carregar_produtos()
+
         if not movimentacoes.empty:
+            # Convertendo a coluna de data
             try:
                 movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed')
             except:
@@ -190,17 +178,61 @@ def tela_historico():
 
             movimentacoes = movimentacoes.dropna(subset=['data'])
             movimentacoes["data_formatada"] = movimentacoes["data"].dt.strftime("%d/%m/%Y %H:%M")
-            movimentacoes = formatar_colunas_historico(movimentacoes)
+
+            # Junta o nome e categoria dos produtos
+            produtos_reduzido = produtos[["id_produto", "nome", "categoria"]]
+            movimentacoes = movimentacoes.merge(produtos_reduzido, on="id_produto", how="left")
+
+            # Filtros
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("🔍 Filtros - Histórico")
+
+            tipos = list(movimentacoes["tipo"].dropna().unique())
+            tipos_exibicao = ["Todos"] + sorted(tipos)
+            tipo_filtro = st.sidebar.selectbox("Tipo de Movimentação", tipos_exibicao)
+
+            produtos_opcoes = movimentacoes["nome"].dropna().unique()
+            produto_filtro = st.sidebar.multiselect("Produto", produtos_opcoes, default=list(produtos_opcoes))
+
+            categorias = movimentacoes["categoria"].dropna().unique()
+            categoria_filtro = st.sidebar.multiselect("Categoria", categorias, default=list(categorias))
+
+            data_min = movimentacoes["data"].min().date()
+            data_max = movimentacoes["data"].max().date()
+            data_inicio, data_fim = st.sidebar.date_input("Período", [data_min, data_max])
+
+            qtd_min = int(movimentacoes["quantidade"].min())
+            qtd_max = int(movimentacoes["quantidade"].max())
+            qtd_selecionada = st.sidebar.slider("Quantidade", min_value=qtd_min, max_value=qtd_max, value=(qtd_min, qtd_max))
+
+            df_filtrado = movimentacoes[
+                ((movimentacoes["tipo"] == tipo_filtro) if tipo_filtro != "Todos" else True) &
+                (movimentacoes["nome"].isin(produto_filtro)) &
+                (movimentacoes["categoria"].isin(categoria_filtro)) &
+                (movimentacoes["data"].dt.date >= data_inicio) &
+                (movimentacoes["data"].dt.date <= data_fim) &
+                (movimentacoes["quantidade"] >= qtd_selecionada[0]) &
+                (movimentacoes["quantidade"] <= qtd_selecionada[1])
+            ]
+
+            termo_busca = st.text_input("🔎 Buscar por Produto ou Categoria:")
+            if termo_busca:
+                termo = termo_busca.lower()
+                df_filtrado = df_filtrado[
+                    df_filtrado["nome"].str.lower().str.contains(termo) |
+                    df_filtrado["categoria"].str.lower().str.contains(termo)
+                ]
+
+            df_filtrado = formatar_colunas_historico(df_filtrado)
 
             st.dataframe(
-                movimentacoes.sort_values("Data", ascending=False).drop(columns="Data"),
+                df_filtrado.sort_values("Data", ascending=False).drop(columns="Data"),
                 column_config={"Data/Hora": "Data/Hora"}
             )
         else:
             st.warning("Nenhuma movimentação registrada ainda")
     except Exception as e:
-        st.error(f"Erro ao carregar histórico: {str(e)}")
-
+        st.error(f"Erro ao processar movimentações: {str(e)}")
 
 opcoes_menu = {
     "Visualizar Produtos": visualizar_produtos,

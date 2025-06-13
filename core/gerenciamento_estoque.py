@@ -20,7 +20,7 @@ def salvar_produtos(df):
 def carregar_movimentacoes():
     if os.path.exists(MOVIMENTACOES_PATH):
         return pd.read_csv(MOVIMENTACOES_PATH)
-    return pd.DataFrame(columns=["id_movimentacao", "id_produto", "tipo", "quantidade", "data", "usuario", "observacao"])
+    return pd.DataFrame(columns=["id_movimentacao", "id_produto", "nome", "categoria", "tipo", "quantidade", "data", "usuario", "observacao"])
 
 def salvar_movimentacoes(df):
     os.makedirs(os.path.dirname(MOVIMENTACOES_PATH), exist_ok=True)
@@ -40,16 +40,19 @@ def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", obse
                 raise ValueError("Quantidade indisponível em estoque")
         
         nova_id = movimentacoes["id_movimentacao"].max() + 1 if not movimentacoes.empty else 1
+        produto_info = produtos[produtos["id_produto"] == id_produto].iloc[0]
         nova_mov = pd.DataFrame([{
             "id_movimentacao": nova_id,
             "id_produto": id_produto,
+            "nome": produto_info["nome"],
+            "categoria": produto_info["categoria"],
             "tipo": tipo,
             "quantidade": quantidade,
             "data": datetime.now().isoformat(sep=' ', timespec='seconds'),
             "usuario": usuario,
             "observacao": observacao
         }])
-        
+
         if tipo == "entrada":
             produtos.loc[produtos["id_produto"] == id_produto, "estoque_atual"] += quantidade
         else:
