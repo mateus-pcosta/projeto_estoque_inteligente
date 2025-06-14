@@ -164,46 +164,54 @@ def tela_movimentacao():
 
 def tela_historico():
     st.subheader("📜 Histórico de Movimentações")
-
+    
     try:
         movimentacoes = carregar_movimentacoes()
-        produtos = carregar_produtos()
-
+        
         if not movimentacoes.empty:
-            # Convertendo a coluna de data
-            try:
-                movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed')
-            except:
-                movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], errors='coerce')
 
+            movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed', errors='coerce')
             movimentacoes = movimentacoes.dropna(subset=['data'])
             movimentacoes["data_formatada"] = movimentacoes["data"].dt.strftime("%d/%m/%Y %H:%M")
 
-            # Junta o nome e categoria dos produtos
-            produtos_reduzido = produtos[["id_produto", "nome", "categoria"]]
-            movimentacoes = movimentacoes.merge(produtos_reduzido, on="id_produto", how="left")
-
-            # Filtros
             st.sidebar.markdown("---")
             st.sidebar.subheader("🔍 Filtros - Histórico")
 
-            tipos = list(movimentacoes["tipo"].dropna().unique())
-            tipos_exibicao = ["Todos"] + sorted(tipos)
-            tipo_filtro = st.sidebar.selectbox("Tipo de Movimentação", tipos_exibicao)
+            tipos = movimentacoes["tipo"].unique()
+            tipo_filtro = st.sidebar.selectbox(
+                "Tipo de Movimentação",
+                options=["Todos"] + list(tipos)
+            )
 
-            produtos_opcoes = movimentacoes["nome"].dropna().unique()
-            produto_filtro = st.sidebar.multiselect("Produto", produtos_opcoes, default=list(produtos_opcoes))
+            produtos_opcoes = movimentacoes["nome"].unique()
+            produto_filtro = st.sidebar.multiselect(
+                "Produto",
+                options=produtos_opcoes,
+                default=list(produtos_opcoes)
+            )
 
-            categorias = movimentacoes["categoria"].dropna().unique()
-            categoria_filtro = st.sidebar.multiselect("Categoria", categorias, default=list(categorias))
+            categorias = movimentacoes["categoria"].unique()
+            categoria_filtro = st.sidebar.multiselect(
+                "Categoria",
+                options=categorias,
+                default=list(categorias)
+            )
 
             data_min = movimentacoes["data"].min().date()
             data_max = movimentacoes["data"].max().date()
-            data_inicio, data_fim = st.sidebar.date_input("Período", [data_min, data_max])
-
+            data_inicio, data_fim = st.sidebar.date_input(
+                "Período",
+                value=(data_min, data_max)
+            )
+            
             qtd_min = int(movimentacoes["quantidade"].min())
             qtd_max = int(movimentacoes["quantidade"].max())
-            qtd_selecionada = st.sidebar.slider("Quantidade", min_value=qtd_min, max_value=qtd_max, value=(qtd_min, qtd_max))
+            qtd_range = st.sidebar.slider(
+                "Quantidade",
+                min_value=qtd_min,
+                max_value=qtd_max,
+                value=(qtd_min, qtd_max)
+            )
 
             df_filtrado = movimentacoes[
                 ((movimentacoes["tipo"] == tipo_filtro) if tipo_filtro != "Todos" else True) &
@@ -211,29 +219,31 @@ def tela_historico():
                 (movimentacoes["categoria"].isin(categoria_filtro)) &
                 (movimentacoes["data"].dt.date >= data_inicio) &
                 (movimentacoes["data"].dt.date <= data_fim) &
-                (movimentacoes["quantidade"] >= qtd_selecionada[0]) &
-                (movimentacoes["quantidade"] <= qtd_selecionada[1])
+                (movimentacoes["quantidade"] >= qtd_range[0]) &
+                (movimentacoes["quantidade"] <= qtd_range[1])
             ]
 
-            termo_busca = st.text_input("🔎 Buscar por Produto ou Categoria:")
+            termo_busca = st.text_input("🔍 Buscar por Produto ou Categoria:")
             if termo_busca:
                 termo = termo_busca.lower()
                 df_filtrado = df_filtrado[
                     df_filtrado["nome"].str.lower().str.contains(termo) |
                     df_filtrado["categoria"].str.lower().str.contains(termo)
                 ]
-
+            
             df_filtrado = formatar_colunas_historico(df_filtrado)
-
+            
             st.dataframe(
                 df_filtrado.sort_values("Data", ascending=False).drop(columns="Data"),
                 column_config={"Data/Hora": "Data/Hora"}
             )
+            
         else:
             st.warning("Nenhuma movimentação registrada ainda")
+            
     except Exception as e:
-        st.error(f"Erro ao processar movimentações: {str(e)}")
-
+        st.error(f"Erro ao carregar histórico: {str(e)}")
+        
 opcoes_menu = {
     "Visualizar Produtos": visualizar_produtos,
     "Movimentação de Estoque": tela_movimentacao,
