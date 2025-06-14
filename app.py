@@ -102,7 +102,7 @@ def visualizar_produtos():
         df_formatado = formatar_nomes_colunas(df_filtrado)
         df_formatado["Preço Unitário"] = df_formatado["Preço Unitário"].apply(formatar_preco)
 
-        st.dataframe(df_formatado.sort_values("Nome"))
+        st.dataframe(df_formatado.sort_values("ID Produto"))
 
     except Exception as e:
         st.error(f"Erro ao carregar produtos: {str(e)}")
@@ -166,6 +166,7 @@ def tela_historico():
     st.subheader("📜 Histórico de Movimentações")
     
     try:
+
         movimentacoes = carregar_movimentacoes()
         
         if not movimentacoes.empty:
