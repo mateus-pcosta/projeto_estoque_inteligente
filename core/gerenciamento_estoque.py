@@ -3,29 +3,45 @@ import pandas as pd
 import os
 from datetime import datetime
 
-CSV_PATH = "data/raw/produtos.csv"
-MOVIMENTACOES_PATH = "data/raw/movimentacoes.csv"
+DB_PATH = "data/raw/estoque.db"
+
+def _get_connection():
+    """Abre (ou cria) uma conexão SQLite e garante estrutura necessária."""
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    con = sqlite3.connect(DB_PATH)
+    return con
+
 
 def carregar_produtos():
-    if os.path.exists(CSV_PATH):
-        df = pd.read_csv(CSV_PATH)
-        if "vendidos_ultimos_30_dias" not in df.columns:
-            df["vendidos_ultimos_30_dias"] = 0
-        return df
-    return pd.DataFrame(columns=["id_produto", "nome", "categoria", "preco_unitario", "estoque_atual", "vendidos_ultimos_30_dias"])
+    """Retorna um DataFrame com a tabela `produtos`. Cria a tabela se não existir."""
+    con = _get_connection()
+    criar_tabelas_produtos()  # garante existência da tabela
+    df = pd.read_sql_query("SELECT * FROM produtos", con)
+    con.close()
+
+    if "vendidos_ultimos_30_dias" not in df.columns:
+        df["vendidos_ultimos_30_dias"] = 0
+
+    return df
 
 def salvar_produtos(df):
-    os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
-    df.to_csv(CSV_PATH, index=False)
+    """Salva o DataFrame `df` na tabela `produtos`, substituindo o conteúdo."""
+    con = _get_connection()
+    df.to_sql('produtos', con, if_exists='replace', index=False)
+    con.close()
 
 def carregar_movimentacoes():
-    if os.path.exists(MOVIMENTACOES_PATH):
-        return pd.read_csv(MOVIMENTACOES_PATH)
-    return pd.DataFrame(columns=["id_movimentacao", "id_produto", "nome", "categoria", "tipo", "quantidade", "data", "usuario", "observacao"])
+    """Retorna DataFrame da tabela `movimentacoes`. Cria a tabela se não existir."""
+    con = _get_connection()
+    criar_tabelas_movimentacoes()  # garante existência
+    df = pd.read_sql_query("SELECT * FROM movimentacoes", con)
+    con.close()
+    return df
 
 def salvar_movimentacoes(df):
-    os.makedirs(os.path.dirname(MOVIMENTACOES_PATH), exist_ok=True)
-    df.to_csv(MOVIMENTACOES_PATH, index=False)
+    con = _get_connection()
+    df.to_sql('movimentacoes', con, if_exists='replace', index=False)
+    con.close()
 
 def registrar_movimentacao(id_produto, tipo, quantidade, usuario="Sistema", observacao="", venda=False):
     try:
@@ -119,7 +135,7 @@ def verificar_estoque_baixo(limite=10):
     return df[df['estoque_atual'] < limite]
 
 def criar_tabelas_movimentacoes():
-    con = sqlite3.connect('data/raw/movimentacoes.db')
+    con = _get_connection()
 
     cur = con.cursor()
 
@@ -139,7 +155,7 @@ def criar_tabelas_movimentacoes():
     con.close()
 
 def criar_tabelas_produtos():
-    con = sqlite3.connect('data/raw/estoque.db')
+    con = _get_connection()
 
     cur = con.cursor()
 
@@ -153,5 +169,38 @@ def criar_tabelas_produtos():
     vendidos_ultimos_30_dias INT DEFAULT 0
     );"""
     )
+
+    con.close()
+
+
+def importar_csv_para_db(produtos_csv: str = "data/raw/produtos.csv", movimentacoes_csv: str = "data/raw/movimentacoes.csv"):
+    """Carrega dados dos arquivos CSV antigos e grava nas tabelas SQLite.
+
+    Se os arquivos existirem, suas informações substituem o conteúdo atual das
+    tabelas `produtos` e `movimentacoes` respectivamente.
+    """
+    # Garante que o banco e as tabelas existam
+    criar_tabelas_produtos()
+    criar_tabelas_movimentacoes()
+
+    con = _get_connection()
+
+    # Importa produtos
+    if os.path.exists(produtos_csv):
+        produtos_df = pd.read_csv(produtos_csv)
+        if "vendidos_ultimos_30_dias" not in produtos_df.columns:
+            produtos_df["vendidos_ultimos_30_dias"] = 0
+        produtos_df.to_sql("produtos", con, if_exists="replace", index=False)
+        print("Produtos importados com sucesso.")
+    else:
+        print(f"Arquivo {produtos_csv} não encontrado. Nenhum dado importado para 'produtos'.")
+
+    # Importa movimentações
+    if os.path.exists(movimentacoes_csv):
+        movimentacoes_df = pd.read_csv(movimentacoes_csv)
+        movimentacoes_df.to_sql("movimentacoes", con, if_exists="replace", index=False)
+        print("Movimentações importadas com sucesso.")
+    else:
+        print(f"Arquivo {movimentacoes_csv} não encontrado. Nenhum dado importado para 'movimentacoes'.")
 
     con.close()
