@@ -5,7 +5,8 @@ from utils.helpers import formatar_preco, formatar_nomes_colunas, formatar_colun
 from core.gerenciamento_estoque import (
     carregar_produtos, adicionar_produto, editar_produto,
     remover_produto, buscar_produto, registrar_movimentacao,
-    verificar_estoque_baixo, carregar_movimentacoes
+    verificar_estoque_baixo, carregar_movimentacoes, criar_tabelas_movimentacoes, 
+    criar_tabelas_produtos
 )
 
 st.set_page_config(page_title="Estoque Inteligente", layout="wide")
@@ -255,6 +256,7 @@ opcoes_menu = {
 }
 
 def main():
+    
     st.sidebar.title("Menu")
     opcao_selecionada = st.sidebar.selectbox("Escolha uma ação:", list(opcoes_menu.keys()))
 
@@ -265,4 +267,6 @@ def main():
     opcoes_menu[opcao_selecionada]()
 
 if __name__ == "__main__":
+    criar_tabelas_movimentacoes()
+    criar_tabelas_produtos()
     main()
