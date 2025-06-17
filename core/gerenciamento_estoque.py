@@ -1,3 +1,4 @@
+import sqlite3
 import pandas as pd
 import os
 from datetime import datetime
@@ -116,3 +117,41 @@ def buscar_produto(termo):
 def verificar_estoque_baixo(limite=10):
     df = carregar_produtos()
     return df[df['estoque_atual'] < limite]
+
+def criar_tabelas_movimentacoes():
+    con = sqlite3.connect('data/raw/movimentacoes.db')
+
+    cur = con.cursor()
+
+    cur.execute(
+    """CREATE TABLE if not exists movimentacoes(
+    id_movimentacao INT PRIMARY KEY,
+    id_produto INT NOT NULL,
+    tipo VARCHAR(10) CHECK (tipo IN ('entrada', 'saida')),
+    quantidade INT NOT NULL,
+    data TIMESTAMP NOT NULL,
+    usuario VARCHAR(50),
+    observacao TEXT,
+    nome VARCHAR(100),
+    categoria VARCHAR(100)
+    );""")
+
+    con.close()
+
+def criar_tabelas_produtos():
+    con = sqlite3.connect('data/raw/estoque.db')
+
+    cur = con.cursor()
+
+    cur.execute(
+    """CREATE TABLE if not exists produtos(
+    id_produto INT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    categoria VARCHAR(50),
+    preco_unitario DECIMAL(10, 2) NOT NULL,
+    estoque_atual INT NOT NULL,
+    vendidos_ultimos_30_dias INT DEFAULT 0
+    );"""
+    )
+
+    con.close()
