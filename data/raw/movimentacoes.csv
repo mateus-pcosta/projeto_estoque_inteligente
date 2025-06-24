@@ -16,3 +16,4 @@ id_movimentacao,id_produto,tipo,quantidade,data,usuario,observacao,nome,categori
 15,1,saida,1,2025-06-11 11:56:07,Sistema,Teste,,
 16,18,saida,1,2025-06-13 19:19:30,Sistema,Teste,Vodka Slova 1L,Bebidas
 17,1,entrada,1,2025-06-13 23:42:50,Sistema,Reabastecimento,Coca-Cola 2L,Bebidas
+18,1,saida,1,2025-06-15 09:41:30,Sistema,,Coca-Cola 2L,Bebidas

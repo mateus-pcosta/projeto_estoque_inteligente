@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from datetime import datetime
 from utils.helpers import formatar_preco, formatar_nomes_colunas, formatar_colunas_historico
 from core.gerenciamento_estoque import (
@@ -72,6 +73,11 @@ def visualizar_produtos():
             st.warning("Nenhum produto encontrado.")
             return
 
+        estoque_baixo = verificar_estoque_baixo()
+        if not estoque_baixo.empty:
+            st.warning("⚠️ Produtos com estoque baixo:")
+            st.dataframe(estoque_baixo[["nome", "estoque_atual"]])
+
         categorias = produtos["categoria"].dropna().unique()
         categoria_filtro = st.sidebar.multiselect("Categoria", categorias, default=list(categorias))
 
@@ -99,14 +105,39 @@ def visualizar_produtos():
                 df_filtrado["categoria"].str.lower().str.contains(termo)
             ]
 
-        # Formata colunas
         df_formatado = formatar_nomes_colunas(df_filtrado)
         df_formatado["Preço Unitário"] = df_formatado["Preço Unitário"].apply(formatar_preco)
 
         st.dataframe(df_formatado.sort_values("ID Produto"))
 
+        st.markdown("---")
+        st.subheader("🏆 Ranking de Categorias Mais Lucrativas")
+
+        if "vendidos_ultimos_30_dias" in produtos.columns:
+            produtos["lucro_total"] = produtos["preco_unitario"] * produtos["vendidos_ultimos_30_dias"]
+            ranking_df = produtos.groupby("categoria")["lucro_total"].sum().reset_index()
+            ranking_df.columns = ["Categoria", "Lucro Total"]
+
+            fig = px.bar(
+                ranking_df.sort_values("Lucro Total", ascending=False),
+                x="Categoria",
+                y="Lucro Total",
+                text=ranking_df["Lucro Total"].apply(formatar_preco),
+                labels={"Lucro Total": "Lucro Total (R$)"},
+                title="Ranking de Categorias Mais Lucrativas"
+            )
+
+            fig.update_traces(textposition="outside")
+            fig.update_layout(yaxis_tickprefix="R$ ", yaxis_tickformat=".2f")
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Coluna 'vendidos_ultimos_30_dias' não encontrada para calcular o ranking.")
+
+
     except Exception as e:
         st.error(f"Erro ao carregar produtos: {str(e)}")
+
 
 def tela_movimentacao():
     st.subheader("🔄 Movimentação de Estoque")
@@ -125,7 +156,6 @@ def tela_movimentacao():
         quantidade = st.number_input("Quantidade:", min_value=1, value=1)
         observacao = st.text_input("Observação/Motivo:")
 
-    # Checkbox para venda 
     foi_venda = st.checkbox("Essa saída foi uma venda?", value=False)
 
     col_entrada, col_saida, _ = st.columns([1, 1, 2])
@@ -167,11 +197,9 @@ def tela_historico():
     st.subheader("📜 Histórico de Movimentações")
     
     try:
-
         movimentacoes = carregar_movimentacoes()
         
         if not movimentacoes.empty:
-
             movimentacoes["data"] = pd.to_datetime(movimentacoes["data"], format='mixed', errors='coerce')
             movimentacoes = movimentacoes.dropna(subset=['data'])
             movimentacoes["data_formatada"] = movimentacoes["data"].dt.strftime("%d/%m/%Y %H:%M")
@@ -180,40 +208,21 @@ def tela_historico():
             st.sidebar.subheader("🔍 Filtros - Histórico")
 
             tipos = movimentacoes["tipo"].unique()
-            tipo_filtro = st.sidebar.selectbox(
-                "Tipo de Movimentação",
-                options=["Todos"] + list(tipos)
-            )
+            tipo_filtro = st.sidebar.selectbox("Tipo de Movimentação", options=["Todos"] + list(tipos))
 
             produtos_opcoes = movimentacoes["nome"].unique()
-            produto_filtro = st.sidebar.multiselect(
-                "Produto",
-                options=produtos_opcoes,
-                default=list(produtos_opcoes)
-            )
+            produto_filtro = st.sidebar.multiselect("Produto", options=produtos_opcoes, default=list(produtos_opcoes))
 
             categorias = movimentacoes["categoria"].unique()
-            categoria_filtro = st.sidebar.multiselect(
-                "Categoria",
-                options=categorias,
-                default=list(categorias)
-            )
+            categoria_filtro = st.sidebar.multiselect("Categoria", options=categorias, default=list(categorias))
 
             data_min = movimentacoes["data"].min().date()
             data_max = movimentacoes["data"].max().date()
-            data_inicio, data_fim = st.sidebar.date_input(
-                "Período",
-                value=(data_min, data_max)
-            )
-            
+            data_inicio, data_fim = st.sidebar.date_input("Período", value=(data_min, data_max))
+
             qtd_min = int(movimentacoes["quantidade"].min())
             qtd_max = int(movimentacoes["quantidade"].max())
-            qtd_range = st.sidebar.slider(
-                "Quantidade",
-                min_value=qtd_min,
-                max_value=qtd_max,
-                value=(qtd_min, qtd_max)
-            )
+            qtd_range = st.sidebar.slider("Quantidade", min_value=qtd_min, max_value=qtd_max, value=(qtd_min, qtd_max))
 
             df_filtrado = movimentacoes[
                 ((movimentacoes["tipo"] == tipo_filtro) if tipo_filtro != "Todos" else True) &
@@ -232,14 +241,36 @@ def tela_historico():
                     df_filtrado["nome"].str.lower().str.contains(termo) |
                     df_filtrado["categoria"].str.lower().str.contains(termo)
                 ]
-            
+
             df_filtrado = formatar_colunas_historico(df_filtrado)
-            
+
             st.dataframe(
                 df_filtrado.sort_values("Data", ascending=False).drop(columns="Data"),
                 column_config={"Data/Hora": "Data/Hora"}
             )
-            
+
+            st.markdown("### 📈 Evolução das Movimentações por Produto")
+
+            df_filtrado["Data"] = pd.to_datetime(df_filtrado["Data"], errors="coerce")
+
+            evolucao = df_filtrado.groupby(["Data", "Nome", "Tipo"])["Quantidade"].sum().reset_index()
+            evolucao.rename(columns={
+                "Nome": "Produto"
+            }, inplace=True)
+
+            fig_evolucao = px.line(
+                evolucao,
+                x="Data",
+                y="Quantidade",
+                color="Produto",
+                line_dash="Tipo",
+                markers=True,
+                title="Entradas e Saídas ao Longo do Tempo"
+            )
+            fig_evolucao.update_layout(xaxis_title="Data", yaxis_title="Quantidade")
+            st.plotly_chart(fig_evolucao, use_container_width=True)
+
+
         else:
             st.warning("Nenhuma movimentação registrada ainda")
             

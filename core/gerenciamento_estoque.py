@@ -13,7 +13,7 @@ def _get_connection():
 
 
 def carregar_produtos():
-    """Retorna um DataFrame com a tabela `produtos`. Cria a tabela se não existir."""
+    """Retorna um DataFrame com a tabela `produtos` e cria a tabela se não existir."""
     con = _get_connection()
     criar_tabelas_produtos()  # garante existência da tabela
     df = pd.read_sql_query("SELECT * FROM produtos", con)
@@ -31,7 +31,7 @@ def salvar_produtos(df):
     con.close()
 
 def carregar_movimentacoes():
-    """Retorna DataFrame da tabela `movimentacoes`. Cria a tabela se não existir."""
+    """Retorna DataFrame da tabela `movimentacoes` e cria a tabela se não existir."""
     con = _get_connection()
     criar_tabelas_movimentacoes()  # garante existência
     df = pd.read_sql_query("SELECT * FROM movimentacoes", con)

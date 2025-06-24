@@ -1,5 +1,5 @@
 id_produto,nome,categoria,preco_unitario,estoque_atual,vendidos_ultimos_30_dias
-1,Coca-Cola 2L,Bebidas,8.5,30,53
+1,Coca-Cola 2L,Bebidas,8.5,29,54
 2,Guaraná Antarctica 2L,Bebidas,7.9,28,40
 3,Pastel de Carne,Salgados,6.0,15,20
 4,Pastel de Queijo,Salgados,6.0,10,18
