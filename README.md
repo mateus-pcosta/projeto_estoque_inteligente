@@ -76,7 +76,7 @@ projeto_estoque_inteligente/
 
 1. **Clone o repositório e entre na pasta**
    ```bash
-   git clone <https://github.com/mateus-pcosta/projeto_estoque_inteligente.git>
+   git clone https://github.com/mateus-pcosta/projeto_estoque_inteligente.git
    cd projeto_estoque_inteligente
    ```
 
