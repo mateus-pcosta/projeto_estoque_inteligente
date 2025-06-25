@@ -1,671 +1,550 @@
 import pandas as pd
 import numpy as np
-import json
-import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-import logging
+from typing import Dict, List, Tuple, Optional
+import os
+import warnings
+warnings.filterwarnings('ignore')
 
-# Configuração de logging para ambiente acadêmico
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Machine Learning
+try:
+    from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_absolute_error, r2_score
+    from sklearn.preprocessing import StandardScaler
+    import joblib
+    ML_DISPONIVEL = True
+except ImportError:
+    ML_DISPONIVEL = False
+    print("⚠️ Scikit-learn não instalado. Execute: pip install scikit-learn joblib")
 
-class GeminiAPIClient:
-    """Cliente para API do Google Gemini com gestão inteligente de quota"""
+
+def criar_dados_sinteticos(vendidos_30_dias: int, id_produto: int) -> pd.DataFrame:
+    """Cria dados sintéticos baseados no campo vendidos_ultimos_30_dias."""
+    if vendidos_30_dias <= 0:
+        return pd.DataFrame()
     
-    def __init__(self):
-        self.model = None
-        self.api_available = False
-        self.quota_exhausted = False  # Flag para evitar chamadas desnecessárias
-        self.last_error_time = None
-        self._initialize_api()
+    # Cria 30 dias de dados sintéticos
+    from datetime import datetime, timedelta
+    datas = [datetime.now() - timedelta(days=i) for i in range(29, -1, -1)]
     
-    def _initialize_api(self) -> bool:
-        """Inicializa a API do Gemini com tratamento de erros"""
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-            
-            api_key = os.getenv('GEMINI_API_KEY')
-            if not api_key or api_key == "sua_chave_api_do_gemini_aqui":
-                logger.info("Chave API do Gemini não configurada - usando análise local exclusiva")
-                return False
-            
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
-            self.api_available = True
-            logger.info("API Gemini configurada (verificação de quota pendente)")
-            return True
-            
-        except ImportError:
-            logger.warning("Biblioteca google-generativeai não instalada - análise local ativa")
-            return False
-        except Exception as e:
-            logger.warning(f"Erro ao inicializar Gemini: {str(e)} - análise local ativa")
-            return False
+    # Distribui as vendas de forma realística
+    vendas_diarias = []
+    media_diaria = vendidos_30_dias / 30
     
-    def is_quota_available(self) -> bool:
-        """Verifica se a quota está disponível sem fazer chamadas desnecessárias"""
-        if not self.api_available or self.quota_exhausted:
-            return False
+    for i, data in enumerate(datas):
+        # Simula padrão: mais vendas em fins de semana e meio/fim do mês
+        fator = 1.0
+        if data.weekday() >= 5:  # Fim de semana
+            fator = 1.3
+        if data.day > 20:  # Final do mês
+            fator *= 1.2
         
-        # Se teve erro de quota há menos de 1 hora, não tenta novamente
-        if self.last_error_time:
-            from datetime import datetime, timedelta
-            if datetime.now() - self.last_error_time < timedelta(hours=1):
-                return False
-        
-        return True
+        # Adiciona variação aleatória
+        import random
+        variacao = random.uniform(0.7, 1.3)
+        vendas = max(0, int(media_diaria * fator * variacao))
+        vendas_diarias.append(vendas)
     
-    def generate_analysis(self, prompt: str) -> Optional[str]:
-        """Gera análise usando Gemini apenas se quota disponível"""
-        if not self.is_quota_available():
-            logger.info("Quota Gemini indisponível - usando análise local")
-            return None
+    # Ajusta para somar exatamente vendidos_30_dias
+    diferenca = vendidos_30_dias - sum(vendas_diarias)
+    if diferenca != 0:
+        # Distribui a diferença nos últimos dias
+        for i in range(min(5, len(vendas_diarias))):
+            if diferenca > 0:
+                vendas_diarias[-(i+1)] += 1
+                diferenca -= 1
+            elif diferenca < 0 and vendas_diarias[-(i+1)] > 0:
+                vendas_diarias[-(i+1)] -= 1
+                diferenca += 1
+    
+    df = pd.DataFrame({
+        'data': datas,
+        'vendas': vendas_diarias
+    })
+    
+    return df
+
+
+def preparar_dados_vendas(movimentacoes_df: pd.DataFrame, id_produto: int) -> pd.DataFrame:
+    """Prepara dados de vendas de um produto para análise."""
+    # Filtra apenas saídas do produto
+    vendas = movimentacoes_df[
+        (movimentacoes_df['id_produto'] == id_produto) & 
+        (movimentacoes_df['tipo'] == 'saida')
+    ].copy()
+    
+    if vendas.empty:
+        return pd.DataFrame()
+    
+    # Converte datas (suporta formatos mistos) e agrupa por dia
+    vendas['data'] = pd.to_datetime(vendas['data'], format='mixed', errors='coerce')
+    
+    # Remove linhas com datas inválidas
+    vendas = vendas.dropna(subset=['data'])
+    
+    if vendas.empty:
+        return pd.DataFrame()
+    
+    vendas_diarias = vendas.groupby(vendas['data'].dt.date)['quantidade'].sum().reset_index()
+    vendas_diarias.columns = ['data', 'vendas']
+    vendas_diarias['data'] = pd.to_datetime(vendas_diarias['data'])
+    
+    # Preenche dias sem vendas com 0
+    data_range = pd.date_range(
+        start=vendas_diarias['data'].min(),
+        end=vendas_diarias['data'].max(),
+        freq='D'
+    )
+    
+    df_completo = pd.DataFrame({'data': data_range})
+    df_completo = df_completo.merge(vendas_diarias, on='data', how='left')
+    df_completo['vendas'] = df_completo['vendas'].fillna(0)
+    
+    return df_completo
+
+
+def criar_features_ml(df: pd.DataFrame) -> pd.DataFrame:
+    """Cria features para os modelos de ML."""
+    df = df.copy()
+    
+    # Features temporais
+    df['dia_semana'] = df['data'].dt.dayofweek
+    df['dia_mes'] = df['data'].dt.day
+    df['mes'] = df['data'].dt.month
+    df['fim_semana'] = (df['dia_semana'] >= 5).astype(int)
+    
+    # Features cíclicas (captura padrões circulares)
+    df['dia_semana_sin'] = np.sin(2 * np.pi * df['dia_semana'] / 7)
+    df['dia_semana_cos'] = np.cos(2 * np.pi * df['dia_semana'] / 7)
+    
+    # Lags (valores passados)
+    for lag in [1, 3, 7, 14]:
+        df[f'vendas_lag_{lag}'] = df['vendas'].shift(lag)
+    
+    # Médias móveis
+    for janela in [3, 7, 14]:
+        df[f'media_movel_{janela}'] = df['vendas'].rolling(window=janela, min_periods=1).mean()
+    
+    # Remove linhas com NaN nas features críticas
+    df = df.dropna()
+    
+    return df
+
+
+def treinar_modelo_produto(movimentacoes_df: pd.DataFrame, id_produto: int, produtos_df: pd.DataFrame = None) -> Dict:
+    """Treina modelo de ML para um produto específico."""
+    if not ML_DISPONIVEL:
+        return {'sucesso': False, 'mensagem': 'ML não disponível'}
+    
+    # Prepara dados reais
+    df = preparar_dados_vendas(movimentacoes_df, id_produto)
+    usar_dados_sinteticos = False
+    
+    # Se não há dados suficientes, tenta usar dados sintéticos
+    if len(df) < 7 or len(df[df['vendas'] > 0]) < 3:
+        if produtos_df is not None:
+            produto = produtos_df[produtos_df['id_produto'] == id_produto]
+            if not produto.empty:
+                vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+                if vendidos_30_dias > 0:
+                    df = criar_dados_sinteticos(vendidos_30_dias, id_produto)
+                    usar_dados_sinteticos = True
+    
+    # Validações finais
+    if len(df) < 7:
+        return {'sucesso': False, 'mensagem': 'Dados insuficientes (mínimo 7 dias)'}
+    
+    dias_com_vendas = len(df[df['vendas'] > 0])
+    if dias_com_vendas < 3:
+        return {'sucesso': False, 'mensagem': f'Muito poucas vendas ({dias_com_vendas} dias com vendas)'}
+    
+    # Cria features
+    df = criar_features_ml(df)
+    
+    # Define features e target
+    feature_cols = [col for col in df.columns if col not in ['data', 'vendas']]
+    X = df[feature_cols]
+    y = df['vendas']
+    
+    # Divide dados (80/20)
+    split_point = int(len(X) * 0.8)
+    X_train, X_test = X[:split_point], X[split_point:]
+    y_train, y_test = y[:split_point], y[split_point:]
+    
+    # Treina modelo
+    modelo = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+    modelo.fit(X_train, y_train)
+    
+    # Avalia
+    y_pred = modelo.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    # Salva modelo
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(modelo, f'models/modelo_produto_{id_produto}.pkl')
+    joblib.dump(feature_cols, f'models/features_produto_{id_produto}.pkl')
+    
+    return {
+        'sucesso': True,
+        'mae': mae,
+        'r2': r2,
+        'features': feature_cols,
+        'dados_treino': len(X_train),
+        'dados_teste': len(X_test),
+        'dados_sinteticos': usar_dados_sinteticos
+    }
+
+
+def prever_demanda(movimentacoes_df: pd.DataFrame, id_produto: int, dias: int = 14, produtos_df: pd.DataFrame = None) -> Dict:
+    """Prevê demanda futura usando modelo treinado."""
+    if not ML_DISPONIVEL:
+        return {'sucesso': False, 'mensagem': 'ML não disponível'}
+    
+    # Verifica se existe modelo treinado
+    modelo_path = f'models/modelo_produto_{id_produto}.pkl'
+    features_path = f'models/features_produto_{id_produto}.pkl'
+    
+    if not os.path.exists(modelo_path):
+        # Tenta treinar (incluindo dados sintéticos se necessário)
+        resultado = treinar_modelo_produto(movimentacoes_df, id_produto, produtos_df)
+        if not resultado['sucesso']:
+            return resultado
+    
+    # Carrega modelo
+    try:
+        modelo = joblib.load(modelo_path)
+        feature_cols = joblib.load(features_path)
+    except:
+        return {'sucesso': False, 'mensagem': 'Erro ao carregar modelo'}
+    
+    # Prepara dados históricos (usa sintéticos se necessário)
+    df = preparar_dados_vendas(movimentacoes_df, id_produto)
+    if df.empty and produtos_df is not None:
+        # Tenta usar dados sintéticos
+        produto = produtos_df[produtos_df['id_produto'] == id_produto]
+        if not produto.empty:
+            vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+            if vendidos_30_dias > 0:
+                df = criar_dados_sinteticos(vendidos_30_dias, id_produto)
+    
+    if df.empty:
+        return {'sucesso': False, 'mensagem': 'Sem dados históricos'}
+    
+    df = criar_features_ml(df)
+    
+    # Gera previsões dia a dia
+    previsoes = []
+    ultima_data = df['data'].max()
+    
+    for i in range(dias):
+        # Data da previsão
+        data_prev = ultima_data + timedelta(days=i+1)
         
-        try:
-            # Faz uma chamada mínima para testar quota
-            test_response = self.model.generate_content(".")  # Prompt mínimo
-            if not test_response.text:
-                raise Exception("Resposta vazia do Gemini")
-            
-            logger.info("Quota Gemini disponível - executando análise IA")
-            # Se chegou aqui, quota está OK - faz a análise real
-            response = self.model.generate_content(prompt)
-            logger.info("Análise Gemini executada com sucesso")
-            return response.text.strip()
-            
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg or "quota" in error_msg.lower():
-                self.quota_exhausted = True
-                self.last_error_time = datetime.now()
-                logger.info("Quota Gemini esgotada - análise local ativada automaticamente")
+        # Cria features para o dia
+        features = {
+            'dia_semana': data_prev.weekday(),
+            'dia_mes': data_prev.day,
+            'mes': data_prev.month,
+            'fim_semana': int(data_prev.weekday() >= 5),
+            'dia_semana_sin': np.sin(2 * np.pi * data_prev.weekday() / 7),
+            'dia_semana_cos': np.cos(2 * np.pi * data_prev.weekday() / 7)
+        }
+        
+        # Adiciona lags e médias móveis baseadas no histórico
+        vendas_historico = list(df['vendas'].tail(14)) + previsoes
+        
+        for lag in [1, 3, 7, 14]:
+            if len(vendas_historico) >= lag:
+                features[f'vendas_lag_{lag}'] = vendas_historico[-(lag)]
             else:
-                logger.warning(f"Erro temporário no Gemini: {error_msg[:50]}... - usando análise local")
-            return None
+                features[f'vendas_lag_{lag}'] = df['vendas'].mean()
+        
+        for janela in [3, 7, 14]:
+            if len(vendas_historico) >= janela:
+                features[f'media_movel_{janela}'] = np.mean(vendas_historico[-janela:])
+            else:
+                features[f'media_movel_{janela}'] = df['vendas'].mean()
+        
+        # Organiza features na ordem correta
+        X_pred = pd.DataFrame([features])[feature_cols]
+        
+        # Faz previsão
+        previsao = max(0, modelo.predict(X_pred)[0])
+        previsoes.append(previsao)
+    
+    return {
+        'sucesso': True,
+        'previsoes': previsoes,
+        'total_previsto': sum(previsoes),
+        'media_diaria': np.mean(previsoes)
+    }
 
-class DemandAnalyzer:
-    """Analisador de demanda com múltiplas estratégias"""
-    
-    def __init__(self):
-        self.gemini_client = GeminiAPIClient()
-        
-    def classify_product_movement(self, sales_30d: int, sales_history: List[int]) -> Tuple[str, float]:
-        """
-        Classifica o movimento do produto com base em vendas
-        
-        Args:
-            sales_30d: Vendas dos últimos 30 dias
-            sales_history: Histórico de vendas
-            
-        Returns:
-            Tuple[classificação, confiança]
-        """
-        
-        # Análise estatística do histórico
-        if len(sales_history) > 1:
-            cv = np.std(sales_history) / (np.mean(sales_history) + 1e-6)  # Coeficiente de variação
-            trend = self._calculate_trend(sales_history)
-        else:
-            cv = 0
-            trend = 0
-        
-        # Classificação baseada em múltiplos critérios
-        if sales_30d >= 40:
-            classification = "Alta saída"
-            confidence = 0.95 if cv < 0.3 else 0.85  # Menor variabilidade = maior confiança
-        elif sales_30d >= 25:
-            classification = "Média-Alta saída"
-            confidence = 0.85 if trend > 0 else 0.75  # Tendência crescente = maior confiança
-        elif sales_30d >= 15:
-            classification = "Média saída"
-            confidence = 0.75
-        elif sales_30d >= 5:
-            classification = "Baixa saída"
-            confidence = 0.65
-        else:
-            classification = "Muito baixa saída"
-            confidence = 0.55
-        
-        # Ajuste para produtos sazonais
-        if cv > 0.5 and len(sales_history) >= 4:
-            classification = "Sazonal"
-            confidence = min(confidence + 0.1, 0.95)
-        
-        return classification, confidence
-    
-    def _calculate_trend(self, sales_history: List[int]) -> float:
-        """Calcula tendência usando regressão linear simples"""
-        if len(sales_history) < 2:
-            return 0
-        
-        x = np.arange(len(sales_history))
-        y = np.array(sales_history)
-        
-        # Regressão linear: y = ax + b
-        if len(x) > 1:
-            slope = np.corrcoef(x, y)[0, 1] if np.std(x) > 0 and np.std(y) > 0 else 0
-            return slope
-        return 0
-    
-    def predict_demand(self, product_data: Dict, days_ahead: int = 30) -> Dict:
-        """
-        Prediz demanda futura usando múltiplos métodos
-        
-        Args:
-            product_data: Dados do produto
-            days_ahead: Dias para previsão
-            
-        Returns:
-            Dicionário com previsões
-        """
-        sales_30d = product_data.get('vendidos_ultimos_30_dias', 0)
-        current_stock = product_data.get('estoque_atual', 0)
-        
-        # Método 1: Média móvel ponderada
-        daily_avg = sales_30d / 30
-        
-        # Método 2: Ajuste por tendência sazonal
-        sales_history = [s.get('quantidade', 0) for s in product_data.get('historico_vendas', [])]
-        
-        if len(sales_history) > 1:
-            # Fator de sazonalidade baseado em variação histórica
-            seasonal_factor = self._calculate_seasonal_factor(sales_history)
-            daily_adjusted = daily_avg * seasonal_factor
-        else:
-            seasonal_factor = 1.0
-            daily_adjusted = daily_avg
-        
-        # Método 3: Suavização exponencial simples
-        alpha = 0.3  # Parâmetro de suavização
-        if len(sales_history) >= 2:
-            exponential_avg = self._exponential_smoothing(sales_history, alpha)
-            daily_adjusted = (daily_adjusted + exponential_avg / 30) / 2
-        
-        # Previsão final
-        demand_prediction = daily_adjusted * days_ahead
-        
-        # Cálculo de ruptura
-        if daily_adjusted > 0:
-            days_to_stockout = int(current_stock / daily_adjusted)
-        else:
-            days_to_stockout = 999
-        
-        # Sugestão de reposição
-        suggest_reorder = days_to_stockout < 14 and sales_30d > 0
-        
-        if suggest_reorder:
-            # Fórmula: demanda prevista + estoque de segurança
-            safety_factor = 1.5 if daily_adjusted > 2 else 1.3
-            reorder_quantity = int(demand_prediction * safety_factor)
-        else:
-            reorder_quantity = None
-        
-        return {
-            'previsao_demanda': round(demand_prediction, 2),
-            'demanda_diaria': round(daily_adjusted, 2),
-            'dias_ate_ruptura': days_to_stockout if days_to_stockout < 999 else None,
-            'sugerir_reposicao': suggest_reorder,
-            'quantidade_reposicao': reorder_quantity,
-            'fator_sazonal': round(seasonal_factor, 2),
-            'metodo_usado': 'Média móvel ponderada + Suavização exponencial'
-        }
-    
-    def _calculate_seasonal_factor(self, sales_history: List[int]) -> float:
-        """Calcula fator de sazonalidade"""
-        if len(sales_history) < 4:
-            return 1.0
-        
-        # Últimas vendas vs média histórica
-        recent_avg = np.mean(sales_history[-3:])
-        total_avg = np.mean(sales_history)
-        
-        if total_avg > 0:
-            factor = recent_avg / total_avg
-            # Limita o fator entre 0.5 e 2.0 para evitar extremos
-            return max(0.5, min(2.0, factor))
-        return 1.0
-    
-    def _exponential_smoothing(self, data: List[int], alpha: float) -> float:
-        """Aplica suavização exponencial"""
-        if not data:
-            return 0
-        
-        result = data[0]
-        for value in data[1:]:
-            result = alpha * value + (1 - alpha) * result
-        
-        return result
 
-class LocalAnalysisEngine:
-    """Motor de análise local avançado"""
+def classificar_urgencia_produto(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame, 
+                                id_produto: int) -> Dict:
+    """Classifica a urgência de reposição de um produto."""
+    # Busca produto
+    produto = produtos_df[produtos_df['id_produto'] == id_produto]
+    if produto.empty:
+        return {'sucesso': False, 'mensagem': 'Produto não encontrado'}
     
-    def __init__(self):
-        self.analyzer = DemandAnalyzer()
+    estoque_atual = int(produto['estoque_atual'].values[0])
+    nome_produto = produto['nome'].values[0]
+    preco = float(produto['preco_unitario'].values[0])
     
-    def analyze_products(self, products_data: List[Dict]) -> Dict:
-        """Executa análise local completa"""
+    # Obter custo unitário (fallback para 65% do preço se não existir)
+    if 'custo_unitario' in produto.columns and not pd.isna(produto['custo_unitario'].values[0]):
+        custo = float(produto['custo_unitario'].values[0])
+    else:
+        custo = preco * 0.65  # fallback: assume margem de 35%
+    
+    # Tenta prever com ML
+    previsao_ml = prever_demanda(movimentacoes_df, id_produto, 14, produtos_df)
+    
+    if previsao_ml['sucesso'] and previsao_ml['total_previsto'] > 0:
+        # Usa previsão ML apenas se prevê demanda > 0
+        demanda_prevista = previsao_ml['previsoes']
+        demanda_total = previsao_ml['total_previsto']
+    else:
+        # Fallback melhorado: usa dados reais dos últimos 30 dias
+        # Converte datas e filtra últimos 30 dias
+        movimentacoes_produto = movimentacoes_df[
+            (movimentacoes_df['id_produto'] == id_produto) & 
+            (movimentacoes_df['tipo'] == 'saida')
+        ].copy()
         
-        logger.info(f"Iniciando análise local de {len(products_data)} produtos")
-        
-        analyses = []
-        risk_products = 0
-        category_performance = {}
-        
-        for product in products_data:
-            # Análise individual do produto
-            analysis = self._analyze_single_product(product)
-            analyses.append(analysis)
-            
-            # Contabiliza produtos em risco
-            if analysis.get('sugerir_reposicao', False):
-                risk_products += 1
-            
-            # Performance por categoria
-            category = product.get('categoria', 'Outros')
-            if category not in category_performance:
-                category_performance[category] = {
-                    'total_sales': 0,
-                    'total_revenue': 0,
-                    'product_count': 0
-                }
-            
-            category_performance[category]['total_sales'] += product.get('vendidos_ultimos_30_dias', 0)
-            category_performance[category]['total_revenue'] += (
-                product.get('vendidos_ultimos_30_dias', 0) * product.get('preco_unitario', 0)
+        if not movimentacoes_produto.empty:
+            # Converte datas
+            movimentacoes_produto['data_convertida'] = pd.to_datetime(
+                movimentacoes_produto['data'], format='mixed', errors='coerce'
             )
-            category_performance[category]['product_count'] += 1
-        
-        # Encontra categoria de melhor performance
-        best_category = max(
-            category_performance.items(),
-            key=lambda x: x[1]['total_revenue']
-        )[0] if category_performance else "N/A"
-        
-        # Gera recomendações inteligentes
-        recommendations = self._generate_recommendations(analyses, category_performance, risk_products)
-        
-        return {
-            "analises": analyses,
-            "resumo_geral": {
-                "produtos_risco_ruptura": risk_products,
-                "categoria_maior_demanda": best_category,
-                "recomendacoes_gerais": recommendations,
-                "metodo_analise": "Análise Local Avançada (Matemática + Estatística)",
-                "precisao_estimada": "Alta (baseada em dados históricos reais)",
-                "algoritmos_usados": [
-                    "Média móvel ponderada",
-                    "Suavização exponencial",
-                    "Análise de tendência (regressão linear)",
-                    "Detecção de sazonalidade",
-                    "Coeficiente de variação"
-                ],
-                "timestamp": datetime.now().isoformat()
-            }
-        }
-    
-    def _analyze_single_product(self, product: Dict) -> Dict:
-        """Analisa um produto individual"""
-        
-        sales_30d = product.get('vendidos_ultimos_30_dias', 0)
-        sales_history = [s.get('quantidade', 0) for s in product.get('historico_vendas', [])]
-        
-        # Classificação
-        classification, confidence = self.analyzer.classify_product_movement(sales_30d, sales_history)
-        
-        # Previsões
-        prediction_7d = self.analyzer.predict_demand(product, 7)
-        prediction_30d = self.analyzer.predict_demand(product, 30)
-        
-        # Insights personalizados
-        insights = self._generate_product_insights(product, classification, prediction_30d)
-        
-        # Alertas
-        alerts = self._generate_product_alerts(product, prediction_30d)
-        
-        return {
-            "id_produto": product.get('id_produto'),
-            "nome": product.get('nome'),
-            "categoria": product.get('categoria'),
-            "previsao_demanda_7_dias": prediction_7d.get('previsao_demanda'),
-            "previsao_demanda_30_dias": prediction_30d.get('previsao_demanda'),
-            "classificacao_saida": classification,
-            "dias_ate_ruptura": prediction_30d.get('dias_ate_ruptura'),
-            "sugerir_reposicao": prediction_30d.get('sugerir_reposicao'),
-            "quantidade_reposicao_sugerida": prediction_30d.get('quantidade_reposicao'),
-            "confianca_previsao": confidence,
-            "insights": insights,
-            "alertas": alerts,
-            "metricas_detalhadas": {
-                "demanda_diaria": prediction_30d.get('demanda_diaria'),
-                "fator_sazonal": prediction_30d.get('fator_sazonal'),
-                "metodo_calculo": prediction_30d.get('metodo_usado'),
-                "vendas_historicas": len(product.get('historico_vendas', [])),
-                "estoque_atual": product.get('estoque_atual', 0),
-                "valor_unitario": product.get('preco_unitario', 0)
-            }
-        }
-    
-    def _generate_product_insights(self, product: Dict, classification: str, prediction: Dict) -> str:
-        """Gera insights personalizados para o produto"""
-        insights = []
-        
-        sales_30d = product.get('vendidos_ultimos_30_dias', 0)
-        price = product.get('preco_unitario', 0)
-        stock = product.get('estoque_atual', 0)
-        
-        # Insights baseados em classificação
-        if "Alta" in classification:
-            insights.append("🌟 Produto estrela - alta demanda consistente")
-        elif "Média" in classification:
-            insights.append("📈 Produto popular - demanda estável")
-        elif "Baixa" in classification:
-            insights.append("📉 Baixo giro - considere estratégias de promoção")
-        elif "Sazonal" in classification:
-            insights.append("🔄 Padrão sazonal detectado - ajuste estoque conforme época")
-        
-        # Insights financeiros
-        revenue_30d = sales_30d * price
-        if revenue_30d > 500:
-            insights.append(f"💰 Alto faturamento: R$ {revenue_30d:.2f} nos últimos 30 dias")
-        
-        # Insights de estoque
-        days_supply = prediction.get('dias_ate_ruptura', 0)
-        if days_supply and days_supply < 7:
-            insights.append("🚨 CRÍTICO: Reposição urgente necessária")
-        elif days_supply and days_supply < 14:
-            insights.append("⚠️ ATENÇÃO: Programar reposição em breve")
-        elif stock > sales_30d * 2:
-            insights.append("📦 Estoque elevado em relação à demanda atual")
-        
-        return " | ".join(insights) if insights else "Produto com padrão de vendas normal"
-    
-    def _generate_product_alerts(self, product: Dict, prediction: Dict) -> List[str]:
-        """Gera alertas específicos para o produto"""
-        alerts = []
-        
-        days_to_stockout = prediction.get('dias_ate_ruptura')
-        
-        if days_to_stockout:
-            if days_to_stockout < 3:
-                alerts.append("🔴 CRÍTICO: Ruptura iminente (< 3 dias)")
-            elif days_to_stockout < 7:
-                alerts.append("🟠 URGENTE: Ruptura em menos de 7 dias")
-            elif days_to_stockout < 14:
-                alerts.append("🟡 ATENÇÃO: Ruptura em menos de 14 dias")
-        
-        # Alertas de performance
-        sales_30d = product.get('vendidos_ultimos_30_dias', 0)
-        if sales_30d == 0:
-            alerts.append("📊 INFO: Produto sem vendas nos últimos 30 dias")
-        
-        return alerts
-    
-    def _generate_recommendations(self, analyses: List[Dict], category_performance: Dict, risk_products: int) -> List[str]:
-        """Gera recomendações gerais do sistema"""
-        recommendations = []
-        
-        # Recomendações baseadas em risco
-        if risk_products > 0:
-            recommendations.append(f"🚨 PRIORIDADE: {risk_products} produtos precisam de reposição urgente")
-        
-        # Produtos de alta performance
-        high_performers = [a for a in analyses if "Alta" in a.get('classificacao_saida', '')]
-        if high_performers:
-            recommendations.append(f"⭐ Focar nos {len(high_performers)} produtos de alta saída para maximizar vendas")
-        
-        # Produtos de baixa performance
-        low_performers = [a for a in analyses if "Baixa" in a.get('classificacao_saida', '')]
-        if len(low_performers) > 3:
-            recommendations.append(f"📉 Avaliar estratégias para {len(low_performers)} produtos de baixo giro")
-        
-        # Categoria performance
-        if category_performance:
-            best_revenue = max(category_performance.values(), key=lambda x: x['total_revenue'])
-            best_category = [k for k, v in category_performance.items() if v == best_revenue][0]
-            recommendations.append(f"💎 Categoria '{best_category}' é a mais rentável - manter estoque adequado")
-        
-        # Recomendação geral
-        recommendations.append("📊 Execute análises semanais para manter insights atualizados")
-        
-        return recommendations
-
-class HybridIntelligenceEngine:
-    """Motor principal de inteligência híbrida"""
-    
-    def __init__(self):
-        self.local_engine = LocalAnalysisEngine()
-        self.gemini_client = GeminiAPIClient()
-    
-    def execute_complete_analysis(self, products_df: pd.DataFrame, movements_df: pd.DataFrame) -> Dict:
-        """
-        Executa análise completa com IA híbrida
-        
-        Returns:
-            Dict com resultados da análise
-        """
-        
-        logger.info("Iniciando análise híbrida de demanda")
-        
-        # Prepara dados para análise
-        prepared_data = self._prepare_analysis_data(products_df, movements_df)
-        
-        # Executa análise local (sempre disponível)
-        local_results = self.local_engine.analyze_products(prepared_data)
-        
-        # Tenta enriquecer com insights do Gemini
-        gemini_insights = self._attempt_gemini_enhancement(prepared_data)
-        
-        if gemini_insights:
-            # Combina resultados
-            enhanced_results = self._merge_ai_insights(local_results, gemini_insights)
-            enhanced_results['resumo_geral']['metodo_analise'] = "Análise Híbrida (Local + Gemini AI)"
-            logger.info("Análise híbrida concluída com sucesso")
-            return enhanced_results
-        else:
-            logger.info("Análise local concluída (Gemini indisponível)")
-            return local_results
-    
-    def _prepare_analysis_data(self, products_df: pd.DataFrame, movements_df: pd.DataFrame) -> List[Dict]:
-        """Prepara dados para análise"""
-        
-        prepared_data = []
-        
-        for _, product in products_df.iterrows():
-            # Histórico de vendas do produto
-            product_movements = movements_df[
-                (movements_df['id_produto'] == product['id_produto']) &
-                (movements_df['tipo'] == 'saida')
+            movimentacoes_produto = movimentacoes_produto.dropna(subset=['data_convertida'])
+            
+            # Filtra últimos 30 dias
+            data_limite = datetime.now() - timedelta(days=30)
+            vendas_recentes = movimentacoes_produto[
+                movimentacoes_produto['data_convertida'] >= data_limite
             ]
             
-            # Converte para formato de análise
-            sales_history = []
-            for _, movement in product_movements.iterrows():
-                try:
-                    date = pd.to_datetime(movement['data']).strftime('%Y-%m-%d')
-                    sales_history.append({
-                        'data': date,
-                        'quantidade': movement['quantidade'],
-                        'observacao': movement.get('observacao', '')
-                    })
-                except:
-                    continue
-            
-            product_data = {
-                'id_produto': int(product['id_produto']),
-                'nome': product['nome'],
-                'categoria': product['categoria'],
-                'preco_unitario': float(product['preco_unitario']),
-                'estoque_atual': int(product['estoque_atual']),
-                'vendidos_ultimos_30_dias': int(product.get('vendidos_ultimos_30_dias', 0)),
-                'historico_vendas': sales_history
-            }
-            
-            prepared_data.append(product_data)
+            if not vendas_recentes.empty:
+                # Usa vendas dos últimos 30 dias
+                vendas_30_dias = vendas_recentes['quantidade'].sum()
+                media_diaria = vendas_30_dias / 30
+            else:
+                # Se não há vendas recentes, usa campo vendidos_ultimos_30_dias do produto
+                vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+                media_diaria = vendidos_30_dias / 30
+        else:
+            # Se não há histórico de vendas, usa campo vendidos_ultimos_30_dias
+            vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+            media_diaria = vendidos_30_dias / 30
         
-        return prepared_data
+        demanda_prevista = [media_diaria] * 14
+        demanda_total = media_diaria * 14
     
-    def _attempt_gemini_enhancement(self, products_data: List[Dict]) -> Optional[Dict]:
-        """Tenta enriquecer análise com Gemini de forma inteligente"""
-        
-        # Verifica se vale a pena tentar usar Gemini
-        if not self.gemini_client.is_quota_available():
-            logger.info("Gemini indisponível - análise local será suficiente")
-            return None
-        
-        # Só usa Gemini para produtos realmente prioritários
-        priority_products = [
-            p for p in products_data 
-            if p.get('vendidos_ultimos_30_dias', 0) > 30  # Apenas produtos de alta rotatividade
-        ][:2]  # Máximo 2 produtos para economizar quota
-        
-        if not priority_products:
-            logger.info("Nenhum produto de alta prioridade para análise IA")
-            return None
-        
-        # Prompt super otimizado para economizar tokens
-        prompt = f"""
-Analise estes produtos TOP de vendas:
-{json.dumps(priority_products, ensure_ascii=False)}
-
-JSON conciso:
-{{
-  "insights": [
-    {{"produto": "nome", "dica": "estratégia em 10 palavras"}}
-  ],
-  "oportunidade": "principal insight em uma frase"
-}}
-"""
-        
-        response = self.gemini_client.generate_analysis(prompt)
-        
-        if response:
-            try:
-                # Parse mais tolerante
-                clean_response = response.strip()
-                if clean_response.startswith('```'):
-                    clean_response = clean_response.split('\n', 1)[1]
-                if clean_response.endswith('```'):
-                    clean_response = clean_response.rsplit('\n', 1)[0]
-                
-                return json.loads(clean_response)
-            except json.JSONDecodeError:
-                logger.info("Resposta Gemini não é JSON válido - continuando com análise local")
-                return None
-        
-        return None
-    
-    def _create_gemini_prompt(self, products_data: List[Dict]) -> str:
-        """Cria prompt otimizado para Gemini"""
-        
-        prompt = f"""
-Você é um especialista em análise de negócios. Analise estes produtos de alta prioridade e forneça insights estratégicos.
-
-DADOS PRIORITÁRIOS:
-{json.dumps(products_data, indent=2, ensure_ascii=False)}
-
-Responda APENAS em JSON válido:
-{{
-  "insights_estrategicos": [
-    {{"produto": "nome", "estrategia": "recomendação específica"}}
-  ],
-  "tendencias_mercado": "análise geral do portfólio",
-  "oportunidades": ["lista de oportunidades identificadas"],
-  "riscos_detectados": ["lista de riscos do negócio"]
-}}
-
-Foque em insights de negócio, não apenas estatísticas.
-"""
-        return prompt
-    
-    def _merge_ai_insights(self, local_results: Dict, gemini_insights: Dict) -> Dict:
-        """Combina resultados local e Gemini"""
-        
-        # Adiciona insights do Gemini de forma mais simples
-        if 'insights' in gemini_insights:
-            local_results['resumo_geral']['insights_ia'] = gemini_insights['insights']
-        
-        if 'oportunidade' in gemini_insights:
-            local_results['resumo_geral']['oportunidade_principal'] = gemini_insights['oportunidade']
-        
-        local_results['resumo_geral']['ia_utilizada'] = True
-        
-        return local_results
-
-# Funções de interface para compatibilidade
-
-def preparar_dados_para_analise(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> List[Dict]:
-    """Função de compatibilidade"""
-    engine = HybridIntelligenceEngine()
-    return engine._prepare_analysis_data(produtos_df, movimentacoes_df)
-
-def executar_analise_completa() -> Dict:
-    """Função principal de execução"""
-    try:
-        from core.gerenciamento_estoque import carregar_produtos, carregar_movimentacoes
-        
-        # Carrega dados
-        produtos_df = carregar_produtos()
-        movimentacoes_df = carregar_movimentacoes()
-        
-        if produtos_df.empty:
-            return {"sucesso": False, "erro": "Nenhum produto encontrado"}
-        
-        # Executa análise híbrida
-        engine = HybridIntelligenceEngine()
-        resultado = engine.execute_complete_analysis(produtos_df, movimentacoes_df)
-        
-        # Salva resultados
-        salvar_previsoes(resultado)
-        
-        # Preparar resumo para interface
-        resumo = {
-            "total_produtos": len(resultado.get('analises', [])),
-            "produtos_risco": resultado.get('resumo_geral', {}).get('produtos_risco_ruptura', 0),
-            "usando_gemini": "insights_ia" in resultado.get('resumo_geral', {})
-        }
-        
-        return {
-            "sucesso": True,
-            "analise": resultado,
-            "resumo": resumo
-        }
-        
-    except Exception as e:
-        logger.error(f"Erro na análise completa: {str(e)}")
-        return {"sucesso": False, "erro": str(e)}
-
-def salvar_previsoes(resultado_analise: Dict, caminho: str = "data/processed/previsoes_demanda.json"):
-    """Salva resultados da análise"""
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    
-    with open(caminho, 'w', encoding='utf-8') as f:
-        json.dump(resultado_analise, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"Análise salva em: {caminho}")
-
-if __name__ == "__main__":
-    # Teste acadêmico do módulo
-    print("🎓 TESTE ACADÊMICO - MÓDULO DE IA HÍBRIDA")
-    print("=" * 60)
-    
-    resultado = executar_analise_completa()
-    
-    if resultado.get('sucesso'):
-        resumo = resultado.get('resumo', {})
-        print(f"✅ Análise concluída com sucesso!")
-        print(f"📊 Produtos analisados: {resumo.get('total_produtos', 0)}")
-        print(f"⚠️ Produtos em risco: {resumo.get('produtos_risco', 0)}")
-        print(f"🤖 IA Gemini ativa: {resumo.get('usando_gemini', False)}")
-        
-        analise = resultado.get('analise', {})
-        if 'resumo_geral' in analise:
-            metodo = analise['resumo_geral'].get('metodo_analise', 'N/A')
-            print(f"🔬 Método utilizado: {metodo}")
+    # Calcula dias até acabar - corrigido para não limitar a 14 dias
+    if demanda_total <= 0:
+        # Sem demanda prevista - classifica por estoque absoluto
+        dias_ate_fim = 999  # Valor alto para indicar sem urgência imediata
     else:
-        print(f"❌ Erro na análise: {resultado.get('erro')}")
+        # Calcula quantos dias o estoque durará
+        media_diaria = demanda_total / 14
+        if media_diaria > 0:
+            dias_ate_fim = int(estoque_atual / media_diaria)
+        else:
+            dias_ate_fim = 999
+    
+    # Classifica urgência - lógica melhorada
+    if estoque_atual == 0:
+        urgencia = 'CRITICO'
+    elif estoque_atual <= 8:  # Produtos com estoque muito baixo
+        urgencia = 'CRITICO'
+    elif demanda_total > 0 and dias_ate_fim <= 3:
+        urgencia = 'CRITICO'
+    elif demanda_total > 0 and dias_ate_fim <= 7:
+        urgencia = 'ATENCAO'
+    elif estoque_atual <= 12:  # Produtos com estoque baixo mesmo sem demanda alta
+        urgencia = 'ATENCAO'
+    elif demanda_total > 0 and dias_ate_fim <= 21:
+        urgencia = 'NORMAL'
+    elif estoque_atual <= 18:  # Alerta preventivo para estoques médio-baixos
+        urgencia = 'NORMAL'
+    else:
+        urgencia = 'EXCESSO'
+    
+    # Calcula quantidade para repor - lógica melhorada
+    if demanda_total > 0:
+        # Com demanda prevista: cobertura de 21 dias + 20% segurança
+        cobertura_dias = 21
+        demanda_21_dias = (demanda_total / 14) * cobertura_dias
+        quantidade_ideal = demanda_21_dias * 1.2
+    else:
+        # Sem demanda: repor até estoque mínimo baseado no histórico de vendas
+        vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+        if vendidos_30_dias > 0:
+            # Estoque mínimo = vendas de 15 dias baseado no histórico
+            quantidade_ideal = (vendidos_30_dias / 30) * 15
+        else:
+            # Produto sem vendas: manter estoque mínimo de 20 unidades
+            quantidade_ideal = 20
+    
+    quantidade_repor = max(0, int(quantidade_ideal - estoque_atual))
+    
+    # Gera insights melhorados
+    insights = []
+    
+    # Insight sobre fonte de dados
+    if previsao_ml['sucesso']:
+        insights.append(f"📊 ML prevê demanda de {demanda_total:.1f} unidades/14 dias")
+    else:
+        vendidos_30_dias = int(produto['vendidos_ultimos_30_dias'].values[0])
+        insights.append(f"📈 Baseado em histórico: {vendidos_30_dias} vendidos/30 dias")
+    
+    # Insight sobre urgência
+    if urgencia == 'CRITICO':
+        if estoque_atual <= 8:
+            insights.append(f"🚨 CRÍTICO: Estoque muito baixo ({estoque_atual} unidades)")
+        elif dias_ate_fim <= 3:
+            insights.append(f"🚨 CRÍTICO: Acabará em {dias_ate_fim} dias")
+        else:
+            insights.append(f"🚨 CRÍTICO: Reposição urgente necessária")
+    elif urgencia == 'ATENCAO':
+        if estoque_atual <= 12:
+            insights.append(f"⚠️ ATENÇÃO: Estoque baixo ({estoque_atual} unidades)")
+        else:
+            insights.append(f"⚠️ ATENÇÃO: Estoque para {dias_ate_fim} dias")
+    elif urgencia == 'NORMAL':
+        if estoque_atual <= 18:
+            insights.append(f"📋 Estoque adequado mas monitore ({estoque_atual} unidades)")
+        else:
+            insights.append(f"📋 Estoque normal para {dias_ate_fim} dias")
+    elif urgencia == 'EXCESSO':
+        insights.append(f"📦 Possível excesso: estoque para {dias_ate_fim}+ dias")
+    
+    # Detecta padrões
+    vendas_por_dia = movimentacoes_df[
+        (movimentacoes_df['id_produto'] == id_produto) & 
+        (movimentacoes_df['tipo'] == 'saida')
+    ].copy()
+    
+    if not vendas_por_dia.empty:
+        vendas_por_dia['data_convertida'] = pd.to_datetime(vendas_por_dia['data'], format='mixed', errors='coerce')
+        vendas_por_dia = vendas_por_dia.dropna(subset=['data_convertida'])
+        
+        if not vendas_por_dia.empty:
+            vendas_por_dia['dia_semana'] = vendas_por_dia['data_convertida'].dt.day_name()
+            dia_mais_vendas = vendas_por_dia.groupby('dia_semana')['quantidade'].sum().idxmax()
+            dias_pt = {
+                'Monday': 'Segunda', 'Tuesday': 'Terça', 'Wednesday': 'Quarta',
+                'Thursday': 'Quinta', 'Friday': 'Sexta', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+            }
+            insights.append(f"📅 Maior venda: {dias_pt.get(dia_mais_vendas, dia_mais_vendas)}")
+    
+    return {
+        'sucesso': True,
+        'produto': nome_produto,
+        'urgencia': urgencia,
+        'dias_ate_fim': dias_ate_fim,
+        'estoque_atual': estoque_atual,
+        'demanda_prevista': demanda_total,
+        'quantidade_repor': quantidade_repor,
+        'investimento': quantidade_repor * custo,
+        'insights': insights,
+        'modelo_ml': previsao_ml['sucesso']
+    }
+
+
+def analisar_todos_produtos(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> Dict:
+    """Analisa todos os produtos e gera dashboard executivo."""
+    resultados = []
+    
+    for _, produto in produtos_df.iterrows():
+        analise = classificar_urgencia_produto(produtos_df, movimentacoes_df, produto['id_produto'])
+        if analise['sucesso']:
+            resultados.append(analise)
+    
+    # Separa por urgência
+    criticos = [r for r in resultados if r['urgencia'] == 'CRITICO']
+    atencao = [r for r in resultados if r['urgencia'] == 'ATENCAO']
+    normais = [r for r in resultados if r['urgencia'] == 'NORMAL']
+    excesso = [r for r in resultados if r['urgencia'] == 'EXCESSO']
+    
+    # Calcula totais
+    investimento_urgente = sum(r['investimento'] for r in criticos)
+    investimento_total = sum(r['investimento'] for r in criticos + atencao)
+    
+    # Ordena por urgência
+    criticos.sort(key=lambda x: x['dias_ate_fim'])
+    atencao.sort(key=lambda x: x['dias_ate_fim'])
+    
+    return {
+        'total_produtos': len(produtos_df),
+        'produtos_criticos': len(criticos),
+        'produtos_atencao': len(atencao),
+        'produtos_normais': len(normais),
+        'produtos_excesso': len(excesso),
+        'investimento_urgente': investimento_urgente,
+        'investimento_total': investimento_total,
+        'lista_criticos': criticos,
+        'lista_atencao': atencao,
+        'produtos_ml': sum(1 for r in resultados if r.get('modelo_ml', False))
+    }
+
+
+def gerar_lista_compras(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> pd.DataFrame:
+    """Gera lista de compras otimizada."""
+    analise = analisar_todos_produtos(produtos_df, movimentacoes_df)
+    
+    lista = []
+    for produto in analise['lista_criticos'] + analise['lista_atencao']:
+        if produto['quantidade_repor'] > 0:
+            lista.append({
+                'Produto': produto['produto'],
+                'Quantidade': produto['quantidade_repor'],
+                'Urgência': produto['urgencia'],
+                'Dias Restantes': produto['dias_ate_fim'],
+                'Investimento': produto['investimento']
+            })
+    
+    if lista:
+        return pd.DataFrame(lista).sort_values('Dias Restantes')
+    return pd.DataFrame()
+
+
+def treinar_todos_modelos(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> Dict:
+    """Treina modelos para todos os produtos possíveis."""
+    if not ML_DISPONIVEL:
+        return {'sucesso': False, 'mensagem': 'ML não disponível'}
+    
+    resultados = {
+        'sucesso': 0,
+        'falha': 0,
+        'detalhes': []
+    }
+    
+    for _, produto in produtos_df.iterrows():
+        id_produto = produto['id_produto']
+        nome = produto['nome']
+        
+        resultado = treinar_modelo_produto(movimentacoes_df, id_produto, produtos_df)
+        
+        if resultado['sucesso']:
+            resultados['sucesso'] += 1
+            status_texto = 'OK (sintético)' if resultado.get('dados_sinteticos', False) else 'OK'
+            resultados['detalhes'].append({
+                'produto': nome,
+                'status': status_texto,
+                'r2': resultado.get('r2', 0),
+                'mae': resultado.get('mae', 0)
+            })
+        else:
+            resultados['falha'] += 1
+            resultados['detalhes'].append({
+                'produto': nome,
+                'status': 'FALHA',
+                'motivo': resultado.get('mensagem', 'Erro')
+            })
+    
+    return resultados

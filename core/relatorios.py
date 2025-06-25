@@ -1,364 +1,468 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import streamlit as st
+import numpy as np
 from datetime import datetime, timedelta
-import json
+from typing import Dict, List, Tuple, Optional
 import os
 
-def carregar_previsoes():
-    """Carrega as últimas previsões salvas"""
-    caminho = "data/processed/previsoes_demanda.json"
+def relatorio_vendas_periodo(movimentacoes_df: pd.DataFrame, dias: int = 30) -> Dict:
+    """
+    Gera relatorio de vendas para um periodo especifico.
     
-    if os.path.exists(caminho):
-        with open(caminho, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return None
-
-def criar_grafico_produtos_risco():
-    """Cria gráfico de produtos em risco de ruptura"""
-    previsoes = carregar_previsoes()
+    Args:
+        movimentacoes_df: DataFrame com as movimentacoes
+        dias: Numero de dias para analisar (padrao: 30)
     
-    if not previsoes or 'analises' not in previsoes:
-        return None
-    
-    # Filtra produtos em risco
-    produtos_risco = [
-        p for p in previsoes['analises'] 
-        if p.get('sugerir_reposicao', False)
-    ]
-    
-    if not produtos_risco:
-        return None
-    
-    # Prepara dados
-    nomes = [p['nome'] for p in produtos_risco]
-    dias_ruptura = [p.get('dias_ate_ruptura', 0) for p in produtos_risco]
-    
-    # Cores baseadas na urgência
-    cores = ['red' if d < 7 else 'orange' if d < 14 else 'yellow' for d in dias_ruptura]
-    
-    fig = go.Figure(data=[
-        go.Bar(
-            x=nomes,
-            y=dias_ruptura,
-            marker_color=cores,
-            text=[f"{d} dias" for d in dias_ruptura],
-            textposition='auto',
-        )
-    ])
-    
-    fig.update_layout(
-        title="⚠️ Produtos em Risco de Ruptura",
-        xaxis_title="Produtos",
-        yaxis_title="Dias até Ruptura",
-        template="plotly_white",
-        height=400
-    )
-    
-    return fig
-
-def criar_grafico_classificacao_produtos():
-    """Cria gráfico de pizza com classificação dos produtos"""
-    previsoes = carregar_previsoes()
-    
-    if not previsoes or 'analises' not in previsoes:
-        return None
-    
-    # Conta classificações
-    classificacoes = {}
-    for produto in previsoes['analises']:
-        classificacao = produto.get('classificacao_saida', 'Não classificado')
-        classificacoes[classificacao] = classificacoes.get(classificacao, 0) + 1
-    
-    if not classificacoes:
-        return None
-    
-    # Cores para cada classificação
-    cores = {
-        'Alta saída': '#ff6b6b',
-        'Média saída': '#ffd93d',
-        'Baixa saída': '#6bcf7f',
-        'Sazonal': '#4ecdc4'
-    }
-    
-    labels = list(classificacoes.keys())
-    values = list(classificacoes.values())
-    colors = [cores.get(label, '#gray') for label in labels]
-    
-    fig = go.Figure(data=[
-        go.Pie(
-            labels=labels,
-            values=values,
-            marker_colors=colors,
-            textinfo='label+percent',
-            hole=0.3
-        )
-    ])
-    
-    fig.update_layout(
-        title="📊 Classificação de Produtos por Saída",
-        template="plotly_white",
-        height=400
-    )
-    
-    return fig
-
-def criar_grafico_previsao_demanda():
-    """Cria gráfico de barras com previsão de demanda"""
-    previsoes = carregar_previsoes()
-    
-    if not previsoes or 'analises' not in previsoes:
-        return None
-    
-    # Prepara dados
-    produtos = []
-    demanda_7d = []
-    demanda_30d = []
-    
-    for produto in previsoes['analises']:
-        produtos.append(produto['nome'][:20])  # Limita nome para visualização
-        demanda_7d.append(produto.get('previsao_demanda_7_dias', 0))
-        demanda_30d.append(produto.get('previsao_demanda_30_dias', 0))
-    
-    # Ordena por demanda de 30 dias (decrescente)
-    dados = list(zip(produtos, demanda_7d, demanda_30d))
-    dados.sort(key=lambda x: x[2], reverse=True)
-    produtos, demanda_7d, demanda_30d = zip(*dados)
-    
-    # Pega os top 10 para não poluir o gráfico
-    produtos = produtos[:10]
-    demanda_7d = demanda_7d[:10]
-    demanda_30d = demanda_30d[:10]
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        name='7 dias',
-        x=produtos,
-        y=demanda_7d,
-        marker_color='lightblue'
-    ))
-    
-    fig.add_trace(go.Bar(
-        name='30 dias',
-        x=produtos,
-        y=demanda_30d,
-        marker_color='darkblue'
-    ))
-    
-    fig.update_layout(
-        title="📈 Previsão de Demanda - Top 10 Produtos",
-        xaxis_title="Produtos",
-        yaxis_title="Quantidade Prevista",
-        barmode='group',
-        template="plotly_white",
-        height=500,
-        xaxis_tickangle=-45
-    )
-    
-    return fig
-
-def criar_tabela_alertas():
-    """Cria tabela formatada com alertas"""
-    previsoes = carregar_previsoes()
-    
-    if not previsoes or 'analises' not in previsoes:
-        return pd.DataFrame()
-    
-    alertas_data = []
-    
-    for produto in previsoes['analises']:
-        if produto.get('sugerir_reposicao', False):
-            prioridade = "🔴 ALTA" if produto.get('dias_ate_ruptura', 99) < 7 else "🟡 MÉDIA"
-            
-            alertas_data.append({
-                'Produto': produto['nome'],
-                'Categoria': produto.get('categoria', 'N/A'),
-                'Dias até Ruptura': produto.get('dias_ate_ruptura', 'N/A'),
-                'Estoque Atual': produto.get('estoque_atual', 0),
-                'Repor (sugestão)': produto.get('quantidade_reposicao_sugerida', 'N/A'),
-                'Prioridade': prioridade,
-                'Classificação': produto.get('classificacao_saida', 'N/A')
+    Returns:
+        Dict com dados do relatorio de vendas
+    """
+    try:
+        # Converte datas para garantir formato correto
+        movimentacoes_df = movimentacoes_df.copy()
+        movimentacoes_df['data'] = pd.to_datetime(movimentacoes_df['data'], format='mixed', errors='coerce')
+        
+        # Remove linhas com datas invalidas
+        movimentacoes_df = movimentacoes_df.dropna(subset=['data'])
+        
+        # Filtra apenas saidas (vendas) no periodo
+        data_limite = datetime.now() - timedelta(days=dias)
+        vendas = movimentacoes_df[
+            (movimentacoes_df['tipo'] == 'saida') & 
+            (movimentacoes_df['data'] >= data_limite)
+        ].copy()
+        
+        if vendas.empty:
+            return {
+                'sucesso': True,
+                'periodo_dias': dias,
+                'total_vendas': 0,
+                'quantidade_total': 0,
+                'produtos_vendidos': 0,
+                'vendas_por_dia': [],
+                'vendas_por_produto': [],
+                'vendas_por_categoria': [],
+                'mensagem': 'Nenhuma venda encontrada no periodo'
+            }
+        
+        # Calcula totais
+        quantidade_total = int(vendas['quantidade'].sum())
+        produtos_vendidos = int(vendas['id_produto'].nunique())
+        
+        # Vendas por dia
+        vendas['data_str'] = vendas['data'].dt.strftime('%Y-%m-%d')
+        vendas_por_dia = vendas.groupby('data_str')['quantidade'].sum().reset_index()
+        vendas_por_dia = vendas_por_dia.sort_values('data_str')
+        
+        vendas_dia_list = []
+        for _, row in vendas_por_dia.iterrows():
+            vendas_dia_list.append({
+                'data': row['data_str'],
+                'quantidade': int(row['quantidade'])
             })
-    
-    if not alertas_data:
-        return pd.DataFrame({'Mensagem': ['✅ Nenhum produto em risco de ruptura!']})
-    
-    df = pd.DataFrame(alertas_data)
-    return df.sort_values('Dias até Ruptura')
-
-def criar_relatorio_vendas_categoria(produtos_df):
-    """Cria relatório de vendas por categoria"""
-    if produtos_df.empty:
-        return None
-    
-    vendas_categoria = produtos_df.groupby('categoria').agg({
-        'vendidos_ultimos_30_dias': 'sum',
-        'preco_unitario': 'mean',
-        'estoque_atual': 'sum'
-    }).reset_index()
-    
-    # Calcula receita estimada
-    vendas_categoria['receita_estimada'] = (
-        vendas_categoria['vendidos_ultimos_30_dias'] * 
-        vendas_categoria['preco_unitario']
-    )
-    
-    vendas_categoria = vendas_categoria.sort_values('receita_estimada', ascending=False)
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=vendas_categoria['categoria'],
-        y=vendas_categoria['receita_estimada'],
-        name='Receita (R$)',
-        marker_color='green',
-        yaxis='y'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=vendas_categoria['categoria'],
-        y=vendas_categoria['vendidos_ultimos_30_dias'],
-        mode='lines+markers',
-        name='Unidades Vendidas',
-        line=dict(color='orange', width=3),
-        yaxis='y2'
-    ))
-    
-    fig.update_layout(
-        title="💰 Performance por Categoria (Últimos 30 dias)",
-        xaxis_title="Categorias",
-        yaxis=dict(title="Receita (R$)", side="left"),
-        yaxis2=dict(title="Unidades Vendidas", side="right", overlaying="y"),
-        template="plotly_white",
-        height=400
-    )
-    
-    return fig
-
-def exibir_painel_principal():
-    """Exibe o painel principal de relatórios no Streamlit"""
-    st.subheader("📊 Dashboard de Análise Inteligente")
-    
-    # Verifica se há previsões
-    previsoes = carregar_previsoes()
-    
-    if not previsoes:
-        st.warning("⚠️ Nenhuma análise de demanda encontrada. Execute a análise primeiro.")
         
-        if st.button("🚀 Executar Análise de Demanda"):
-            with st.spinner("Analisando produtos com IA..."):
-                from core.previsao_demanda import executar_analise_completa
-                resultado = executar_analise_completa()
+        # Vendas por produto
+        vendas_por_produto = vendas.groupby(['id_produto', 'nome'])['quantidade'].sum().reset_index()
+        vendas_por_produto = vendas_por_produto.sort_values('quantidade', ascending=False)
+        
+        vendas_produto_list = []
+        for _, row in vendas_por_produto.iterrows():
+            vendas_produto_list.append({
+                'produto': row['nome'] if pd.notna(row['nome']) else f"Produto ID {row['id_produto']}",
+                'quantidade': int(row['quantidade'])
+            })
+        
+        # Vendas por categoria
+        vendas_categoria = vendas.groupby('categoria')['quantidade'].sum().reset_index()
+        vendas_categoria = vendas_categoria.sort_values('quantidade', ascending=False)
+        
+        vendas_categoria_list = []
+        for _, row in vendas_categoria.iterrows():
+            categoria = row['categoria'] if pd.notna(row['categoria']) else 'Sem categoria'
+            vendas_categoria_list.append({
+                'categoria': categoria,
+                'quantidade': int(row['quantidade'])
+            })
+        
+        return {
+            'sucesso': True,
+            'periodo_dias': dias,
+            'total_vendas': len(vendas),
+            'quantidade_total': quantidade_total,
+            'produtos_vendidos': produtos_vendidos,
+            'media_diaria': round(quantidade_total / dias, 2),
+            'vendas_por_dia': vendas_dia_list,
+            'vendas_por_produto': vendas_produto_list,
+            'vendas_por_categoria': vendas_categoria_list
+        }
+        
+    except Exception as e:
+        return {
+            'sucesso': False,
+            'erro': str(e),
+            'mensagem': 'Erro ao gerar relatorio de vendas'
+        }
+
+
+def relatorio_estoque_critico(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> Dict:
+    """
+    Gera relatorio de produtos com estoque critico.
+    
+    Args:
+        produtos_df: DataFrame com dados dos produtos
+        movimentacoes_df: DataFrame com movimentacoes
+    
+    Returns:
+        Dict com produtos criticos e estatisticas
+    """
+    try:
+        from core.previsao_demanda import classificar_urgencia_produto
+        
+        produtos_criticos = []
+        produtos_atencao = []
+        produtos_normais = []
+        
+        for _, produto in produtos_df.iterrows():
+            analise = classificar_urgencia_produto(produtos_df, movimentacoes_df, produto['id_produto'])
+            
+            if analise['sucesso']:
+                produto_info = {
+                    'id': produto['id_produto'],  
+                    'nome': produto['nome'],
+                    'categoria': produto['categoria'],
+                    'estoque_atual': produto['estoque_atual'],
+                    'preco_unitario': produto['preco_unitario'],
+                    'urgencia': analise['urgencia'],
+                    'dias_ate_fim': analise['dias_ate_fim'],
+                    'quantidade_repor': analise['quantidade_repor'],
+                    'investimento': analise['investimento']
+                }
                 
-                if resultado.get('sucesso'):
-                    st.success("✅ Análise concluída!")
-                    st.rerun()
+                if analise['urgencia'] == 'CRITICO':
+                    produtos_criticos.append(produto_info)
+                elif analise['urgencia'] == 'ATENCAO':
+                    produtos_atencao.append(produto_info)
                 else:
-                    st.error(f"❌ Erro: {resultado.get('erro')}")
-        return
-    
-    # Mostra informações da última análise
-    timestamp = previsoes.get('timestamp_analise', 'N/A')
-    if timestamp != 'N/A':
-        timestamp = datetime.fromisoformat(timestamp).strftime("%d/%m/%Y %H:%M")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric(
-            "📦 Produtos Analisados", 
-            previsoes.get('total_produtos_analisados', 0)
-        )
-    
-    with col2:
-        produtos_risco = previsoes.get('resumo_geral', {}).get('produtos_risco_ruptura', 0)
-        st.metric(
-            "⚠️ Em Risco de Ruptura", 
-            produtos_risco,
-            delta=f"-{produtos_risco}" if produtos_risco > 0 else "0"
-        )
-    
-    with col3:
-        st.metric(
-            "🕐 Última Análise", 
-            timestamp
-        )
-    
-    # Gráficos principais
-    st.markdown("---")
-    
-    # Alertas de reposição
-    st.subheader("🚨 Alertas de Reposição")
-    tabela_alertas = criar_tabela_alertas()
-    
-    if not tabela_alertas.empty and 'Produto' in tabela_alertas.columns:
-        st.dataframe(tabela_alertas, use_container_width=True)
-    else:
-        st.success("✅ Todos os produtos com estoque adequado!")
-    
-    # Gráficos em colunas
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        grafico_risco = criar_grafico_produtos_risco()
-        if grafico_risco:
-            st.plotly_chart(grafico_risco, use_container_width=True)
-    
-    with col2:
-        grafico_classificacao = criar_grafico_classificacao_produtos()
-        if grafico_classificacao:
-            st.plotly_chart(grafico_classificacao, use_container_width=True)
-    
-    # Gráfico de previsão de demanda
-    st.markdown("---")
-    grafico_demanda = criar_grafico_previsao_demanda()
-    if grafico_demanda:
-        st.plotly_chart(grafico_demanda, use_container_width=True)
-    
-    # Performance por categoria
-    from core.gerenciamento_estoque import carregar_produtos
-    produtos_df = carregar_produtos()
-    
-    if not produtos_df.empty:
-        st.markdown("---")
-        grafico_categoria = criar_relatorio_vendas_categoria(produtos_df)
-        if grafico_categoria:
-            st.plotly_chart(grafico_categoria, use_container_width=True)
-    
-    # Insights da IA
-    if 'resumo_geral' in previsoes:
-        resumo = previsoes['resumo_geral']
+                    produtos_normais.append(produto_info)
         
-        if 'recomendacoes_gerais' in resumo and resumo['recomendacoes_gerais']:
-            st.markdown("---")
-            st.subheader("💡 Recomendações da IA")
-            
-            for recomendacao in resumo['recomendacoes_gerais']:
-                st.info(f"🔍 {recomendacao}")
+        # Ordena por urgencia
+        produtos_criticos.sort(key=lambda x: x['dias_ate_fim'])
+        produtos_atencao.sort(key=lambda x: x['dias_ate_fim'])
+        
+        # Calcula investimentos
+        investimento_critico = sum(p['investimento'] for p in produtos_criticos)
+        investimento_atencao = sum(p['investimento'] for p in produtos_atencao)
+        investimento_total = investimento_critico + investimento_atencao
+        
+        return {
+            'sucesso': True,
+            'total_produtos': len(produtos_df),
+            'produtos_criticos': len(produtos_criticos),
+            'produtos_atencao': len(produtos_atencao),
+            'produtos_normais': len(produtos_normais),
+            'investimento_critico': round(investimento_critico, 2),
+            'investimento_atencao': round(investimento_atencao, 2),
+            'investimento_total': round(investimento_total, 2),
+            'lista_criticos': produtos_criticos,
+            'lista_atencao': produtos_atencao,
+            'resumo_categorias': _resumo_por_categoria(produtos_criticos + produtos_atencao)
+        }
+        
+    except Exception as e:
+        return {
+            'sucesso': False,
+            'erro': str(e),
+            'mensagem': 'Erro ao gerar relatorio de estoque critico'
+        }
+
+
+def relatorio_categorias(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> Dict:
+    """
+    Gera relatorio de analise por categorias.
     
-    # Botão para nova análise
-    st.markdown("---")
-    if st.button("🔄 Executar Nova Análise"):
-        with st.spinner("Analisando dados..."):
-            from core.previsao_demanda import executar_analise_completa
-            resultado = executar_analise_completa()
+    Args:
+        produtos_df: DataFrame com dados dos produtos
+        movimentacoes_df: DataFrame com movimentacoes
+    
+    Returns:
+        Dict com analise por categorias
+    """
+    try:
+        # Converte datas
+        movimentacoes_df = movimentacoes_df.copy()
+        movimentacoes_df['data'] = pd.to_datetime(movimentacoes_df['data'], format='mixed', errors='coerce')
+        movimentacoes_df = movimentacoes_df.dropna(subset=['data'])
+        
+        # Ultimos 30 dias
+        data_limite = datetime.now() - timedelta(days=30)
+        vendas_recentes = movimentacoes_df[
+            (movimentacoes_df['tipo'] == 'saida') & 
+            (movimentacoes_df['data'] >= data_limite)
+        ]
+        
+        categorias_info = []
+        
+        # Agrupa produtos por categoria
+        for categoria, produtos_cat in produtos_df.groupby('categoria'):
+            categoria_nome = categoria if pd.notna(categoria) else 'Sem categoria'
             
-            if resultado.get('sucesso'):
-                st.success("✅ Nova análise concluída!")
-                st.rerun()
-            else:
-                st.error(f"❌ Erro: {resultado.get('erro')}")
+            # Estatisticas basicas
+            total_produtos = len(produtos_cat)
+            estoque_total = int(produtos_cat['estoque_atual'].sum())
+            valor_estoque = float((produtos_cat['estoque_atual'] * produtos_cat['preco_unitario']).sum())
+            
+            # Vendas da categoria
+            ids_categoria = produtos_cat['id_produto'].tolist()
+            vendas_categoria = vendas_recentes[vendas_recentes['id_produto'].isin(ids_categoria)]
+            
+            total_vendido = int(vendas_categoria['quantidade'].sum()) if not vendas_categoria.empty else 0
+            
+            # Produtos com problema de estoque
+            produtos_criticos = 0
+            produtos_zerados = 0
+            
+            for _, produto in produtos_cat.iterrows():
+                if produto['estoque_atual'] == 0:
+                    produtos_zerados += 1
+                elif produto['estoque_atual'] <= 5:  # Criterio simples para critico
+                    produtos_criticos += 1
+            
+            # Produto mais vendido da categoria
+            produto_top = None
+            if not vendas_categoria.empty:
+                vendas_por_produto = vendas_categoria.groupby('id_produto')['quantidade'].sum()
+                if not vendas_por_produto.empty:
+                    id_top = vendas_por_produto.idxmax()
+                    produto_info = produtos_cat[produtos_cat['id_produto'] == id_top]
+                    if not produto_info.empty:
+                        produto_top = {
+                            'nome': produto_info['nome'].iloc[0],
+                            'vendas': int(vendas_por_produto.max())
+                        }
+            
+            categorias_info.append({
+                'categoria': categoria_nome,
+                'total_produtos': total_produtos,
+                'estoque_total': estoque_total,
+                'valor_estoque': round(valor_estoque, 2),
+                'total_vendido_30d': total_vendido,
+                'produtos_criticos': produtos_criticos,
+                'produtos_zerados': produtos_zerados,
+                'produto_mais_vendido': produto_top,
+                'giro_categoria': round(total_vendido / max(estoque_total, 1), 2)
+            })
+        
+        # Ordena por valor do estoque
+        categorias_info.sort(key=lambda x: x['valor_estoque'], reverse=True)
+        
+        # Estatisticas gerais
+        total_valor_estoque = sum(cat['valor_estoque'] for cat in categorias_info)
+        total_vendas_30d = sum(cat['total_vendido_30d'] for cat in categorias_info)
+        
+        return {
+            'sucesso': True,
+            'total_categorias': len(categorias_info),
+            'valor_total_estoque': round(total_valor_estoque, 2),
+            'total_vendas_30d': total_vendas_30d,
+            'categorias': categorias_info,
+            'categoria_maior_estoque': categorias_info[0]['categoria'] if categorias_info else None,
+            'categoria_mais_vendas': max(categorias_info, key=lambda x: x['total_vendido_30d'])['categoria'] if categorias_info else None
+        }
+        
+    except Exception as e:
+        return {
+            'sucesso': False,
+            'erro': str(e),
+            'mensagem': 'Erro ao gerar relatorio de categorias'
+        }
 
-def gerar_relatorio_pdf():
-    """Gera relatório em PDF (implementação futura)"""
-    st.info("📄 Geração de PDF será implementada em versão futura")
-    pass
 
-if __name__ == "__main__":
-    # Teste das funções
-    print("Testando módulo de relatórios...")
-    previsoes = carregar_previsoes()
-    print(f"Previsões carregadas: {previsoes is not None}")
+def exportar_relatorio_excel(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame, 
+                           arquivo: str = None) -> Dict:
+    """
+    Exporta relatorios completos para arquivo Excel.
+    
+    Args:
+        produtos_df: DataFrame com dados dos produtos
+        movimentacoes_df: DataFrame com movimentacoes
+        arquivo: Nome do arquivo (opcional)
+    
+    Returns:
+        Dict com resultado da exportacao
+    """
+    try:
+        # Define nome do arquivo
+        if not arquivo:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            arquivo = f'relatorio_estoque_{timestamp}.xlsx'
+        
+        # Garante que o diretorio existe
+        os.makedirs('relatorios', exist_ok=True)
+        caminho_completo = os.path.join('relatorios', arquivo)
+        
+        # Gera todos os relatorios
+        rel_vendas = relatorio_vendas_periodo(movimentacoes_df, 30)
+        rel_critico = relatorio_estoque_critico(produtos_df, movimentacoes_df)
+        rel_categorias = relatorio_categorias(produtos_df, movimentacoes_df)
+        
+        # Cria o arquivo Excel
+        with pd.ExcelWriter(caminho_completo, engine='openpyxl') as writer:
+            
+            # Aba 1: Produtos
+            produtos_df.to_excel(writer, sheet_name='Produtos', index=False)
+            
+            # Aba 2: Movimentacoes recentes (ultimos 30 dias)
+            movimentacoes_df_temp = movimentacoes_df.copy()
+            movimentacoes_df_temp['data'] = pd.to_datetime(movimentacoes_df_temp['data'], format='mixed', errors='coerce')
+            movimentacoes_recentes = movimentacoes_df_temp[
+                movimentacoes_df_temp['data'] >= (datetime.now() - timedelta(days=30))
+            ].sort_values('data', ascending=False)
+            movimentacoes_recentes.to_excel(writer, sheet_name='Movimentacoes_30d', index=False)
+            
+            # Aba 3: Estoque Critico
+            if rel_critico['sucesso'] and (rel_critico['lista_criticos'] or rel_critico['lista_atencao']):
+                criticos_df = pd.DataFrame(rel_critico['lista_criticos'] + rel_critico['lista_atencao'])
+                criticos_df.to_excel(writer, sheet_name='Estoque_Critico', index=False)
+            
+            # Aba 4: Vendas por Produto
+            if rel_vendas['sucesso'] and rel_vendas['vendas_por_produto']:
+                vendas_produto_df = pd.DataFrame(rel_vendas['vendas_por_produto'])
+                vendas_produto_df.to_excel(writer, sheet_name='Vendas_Produto', index=False)
+            
+            # Aba 5: Analise por Categoria
+            if rel_categorias['sucesso'] and rel_categorias['categorias']:
+                categorias_df = pd.DataFrame(rel_categorias['categorias'])
+                categorias_df.to_excel(writer, sheet_name='Analise_Categorias', index=False)
+            
+            # Aba 6: Resumo Executivo
+            resumo_data = []
+            
+            # Dados gerais
+            resumo_data.append(['=== RESUMO EXECUTIVO ===', ''])
+            resumo_data.append(['Data do Relatorio', datetime.now().strftime('%d/%m/%Y %H:%M')])
+            resumo_data.append(['', ''])
+            
+            # Produtos
+            resumo_data.append(['=== PRODUTOS ===', ''])
+            resumo_data.append(['Total de Produtos', len(produtos_df)])
+            resumo_data.append(['Valor Total em Estoque', f"R$ {rel_categorias.get('valor_total_estoque', 0):,.2f}"])
+            resumo_data.append(['', ''])
+            
+            # Estoque Critico
+            if rel_critico['sucesso']:
+                resumo_data.append(['=== ESTOQUE CRITICO ===', ''])
+                resumo_data.append(['Produtos Criticos', rel_critico['produtos_criticos']])
+                resumo_data.append(['Produtos Atencao', rel_critico['produtos_atencao']])
+                resumo_data.append(['Investimento Necessario', f"R$ {rel_critico['investimento_total']:,.2f}"])
+                resumo_data.append(['', ''])
+            
+            # Vendas
+            if rel_vendas['sucesso']:
+                resumo_data.append(['=== VENDAS (30 DIAS) ===', ''])
+                resumo_data.append(['Total de Vendas', rel_vendas['total_vendas']])
+                resumo_data.append(['Quantidade Vendida', rel_vendas['quantidade_total']])
+                resumo_data.append(['Media Diaria', rel_vendas.get('media_diaria', 0)])
+                resumo_data.append(['Produtos Vendidos', rel_vendas['produtos_vendidos']])
+            
+            resumo_df = pd.DataFrame(resumo_data, columns=['Metrica', 'Valor'])
+            resumo_df.to_excel(writer, sheet_name='Resumo_Executivo', index=False)
+        
+        return {
+            'sucesso': True,
+            'arquivo': caminho_completo,
+            'tamanho_kb': round(os.path.getsize(caminho_completo) / 1024, 2),
+            'abas_criadas': ['Produtos', 'Movimentacoes_30d', 'Estoque_Critico', 
+                           'Vendas_Produto', 'Analise_Categorias', 'Resumo_Executivo'],
+            'mensagem': f'Relatorio exportado com sucesso para {caminho_completo}'
+        }
+        
+    except Exception as e:
+        return {
+            'sucesso': False,
+            'erro': str(e),
+            'mensagem': 'Erro ao exportar relatorio para Excel'
+        }
+
+
+def _resumo_por_categoria(produtos_lista: List[Dict]) -> List[Dict]:
+    """
+    Funcao auxiliar para resumir produtos por categoria.
+    """
+    if not produtos_lista:
+        return []
+    
+    categorias = {}
+    for produto in produtos_lista:
+        categoria = produto.get('categoria', 'Sem categoria')
+        if categoria not in categorias:
+            categorias[categoria] = {
+                'categoria': categoria,
+                'quantidade': 0,
+                'investimento': 0
+            }
+        categorias[categoria]['quantidade'] += 1
+        categorias[categoria]['investimento'] += produto.get('investimento', 0)
+    
+    return list(categorias.values())
+
+
+def gerar_dashboard_resumo(produtos_df: pd.DataFrame, movimentacoes_df: pd.DataFrame) -> Dict:
+    """
+    Gera um resumo executivo para dashboard.
+    
+    Args:
+        produtos_df: DataFrame com dados dos produtos
+        movimentacoes_df: DataFrame com movimentacoes
+    
+    Returns:
+        Dict com metricas principais para dashboard
+    """
+    try:
+        # Gera relatorios
+        rel_vendas = relatorio_vendas_periodo(movimentacoes_df, 30)
+        rel_critico = relatorio_estoque_critico(produtos_df, movimentacoes_df)
+        rel_categorias = relatorio_categorias(produtos_df, movimentacoes_df)
+        
+        # Metricas principais
+        metricas = {
+            'total_produtos': len(produtos_df),
+            'valor_estoque': rel_categorias.get('valor_total_estoque', 0),
+            'produtos_criticos': rel_critico.get('produtos_criticos', 0),
+            'produtos_atencao': rel_critico.get('produtos_atencao', 0),
+            'vendas_30d': rel_vendas.get('quantidade_total', 0),
+            'investimento_necessario': rel_critico.get('investimento_total', 0),
+            'categorias_total': rel_categorias.get('total_categorias', 0)
+        }
+        
+        # Alertas
+        alertas = []
+        if metricas['produtos_criticos'] > 0:
+            alertas.append(f"🚨 {metricas['produtos_criticos']} produtos com estoque critico!")
+        
+        if metricas['produtos_atencao'] > 0:
+            alertas.append(f"⚠️ {metricas['produtos_atencao']} produtos precisam de atencao")
+        
+        if metricas['investimento_necessario'] > 0:
+            alertas.append(f"💰 R$ {metricas['investimento_necessario']:,.2f} necessarios para reposicao")
+        
+        # Top produtos criticos
+        top_criticos = []
+        if rel_critico['sucesso'] and rel_critico['lista_criticos']:
+            top_criticos = rel_critico['lista_criticos'][:5]  # Top 5
+        
+        return {
+            'sucesso': True,
+            'metricas': metricas,
+            'alertas': alertas,
+            'top_criticos': top_criticos,
+            'categoria_mais_vendas': rel_categorias.get('categoria_mais_vendas'),
+            'categoria_maior_estoque': rel_categorias.get('categoria_maior_estoque')
+        }
+        
+    except Exception as e:
+        return {
+            'sucesso': False,
+            'erro': str(e),
+            'mensagem': 'Erro ao gerar dashboard resumo'
+        }

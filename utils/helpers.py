@@ -8,6 +8,7 @@ def formatar_nomes_colunas(df):
         "nome": "Nome",
         "categoria": "Categoria",
         "preco_unitario": "Preço Unitário",
+        "custo_unitario": "Custo Unitário",
         "estoque_atual": "Estoque Atual",
         "vendidos_ultimos_30_dias": "Vendidos dos últimos 30 dias"
     }

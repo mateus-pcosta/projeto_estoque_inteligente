@@ -68,3 +68,51 @@ projeto_estoque_inteligente/
 ├── .gitignore                   # Arquivos/pastas ignorados pelo Git (ex: __pycache__, .env)
 ├── README.md                    # Documentação básica do projeto
 ├── requirements.txt             # Dependências Python para o ambiente do projeto
+```
+
+---
+
+## 🚀 Como executar o projeto
+
+1. **Clone o repositório e entre na pasta**
+   ```bash
+   git clone https://github.com/mateus-pcosta/projeto_estoque_inteligente.git
+   cd projeto_estoque_inteligente
+   ```
+
+2. **(Opcional) Crie e ative um ambiente virtual**
+   ```bash
+   python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # Linux/macOS
+   source .venv/bin/activate
+   ```
+
+3. **Instale as dependências**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **(Opcional) Importe dados antigos em CSV para o banco SQLite**
+   Caso possua os arquivos `data/raw/produtos.csv` e `data/raw/movimentacoes.csv`, execute:
+   ```python
+   python - << "PY"
+   from core.gerenciamento_estoque import importar_csv_para_db
+   importar_csv_para_db()
+   PY
+   ```
+   Isso criará/atualizará `data/raw/estoque.db` com os dados.
+
+5. **Execute a aplicação Streamlit**
+   ```bash
+   streamlit run app.py
+   ```
+   O navegador abrirá em `http://localhost:8501`.
+
+6. **Primeiros passos na interface**
+   * Adicione produtos em "Adicionar Produto".
+   * Registre movimentações.
+   * Explore filtros e histórico.
+
+Pronto! Qualquer dúvida consulte o código ou abra uma *issue*. 😉

@@ -1,16 +1,19 @@
-id_movimentacao,id_produto,tipo,quantidade,data,usuario,observacao
-1,1,entrada,50,2023-11-01,Sistema,Compra inicial
-2,1,saida,25,2023-11-02,Sistema,Venda PDV-001
-3,1,entrada,1,2025-06-10 08:58:46,Sistema,Devolução
-4,2,saida,2,2025-06-10 11:24:05,Sistema,
-5,5,entrada,10,2025-06-10 11:26:46,Sistema,Entrou
-6,1,entrada,2,2025-06-10 11:37:15,Sistema,
-7,1,entrada,2,2025-06-10 11:37:49,Sistema,
-8,17,entrada,10,2025-06-10 12:10:51,Sistema,
-9,1,saida,1,2025-06-11 11:47:13,Sistema,Teste
-10,1,entrada,1,2025-06-11 11:47:27,Sistema,Teste
-11,1,saida,1,2025-06-11 11:47:31,Sistema,Teste
-12,1,entrada,1,2025-06-11 11:48:34,Sistema,
-13,1,saida,1,2025-06-11 11:51:16,Sistema,Teste
-14,1,entrada,1,2025-06-11 11:51:27,Sistema,
-15,1,saida,1,2025-06-11 11:56:07,Sistema,Teste
+id_movimentacao,id_produto,tipo,quantidade,data,usuario,observacao,nome,categoria
+1,1,entrada,50,2023-11-01,Sistema,Compra inicial,,
+2,1,saida,25,2023-11-02,Sistema,Venda PDV-001,,
+3,1,entrada,1,2025-06-10 08:58:46,Sistema,Devolução,,
+4,2,saida,2,2025-06-10 11:24:05,Sistema,,,
+5,5,entrada,10,2025-06-10 11:26:46,Sistema,Entrou,,
+6,1,entrada,2,2025-06-10 11:37:15,Sistema,,,
+7,1,entrada,2,2025-06-10 11:37:49,Sistema,,,
+8,17,entrada,10,2025-06-10 12:10:51,Sistema,,,
+9,1,saida,1,2025-06-11 11:47:13,Sistema,Teste,,
+10,1,entrada,1,2025-06-11 11:47:27,Sistema,Teste,,
+11,1,saida,1,2025-06-11 11:47:31,Sistema,Teste,,
+12,1,entrada,1,2025-06-11 11:48:34,Sistema,,,
+13,1,saida,1,2025-06-11 11:51:16,Sistema,Teste,,
+14,1,entrada,1,2025-06-11 11:51:27,Sistema,,,
+15,1,saida,1,2025-06-11 11:56:07,Sistema,Teste,,
+16,18,saida,1,2025-06-13 19:19:30,Sistema,Teste,Vodka Slova 1L,Bebidas
+17,1,entrada,1,2025-06-13 23:42:50,Sistema,Reabastecimento,Coca-Cola 2L,Bebidas
+18,1,saida,1,2025-06-15 09:41:30,Sistema,,Coca-Cola 2L,Bebidas
