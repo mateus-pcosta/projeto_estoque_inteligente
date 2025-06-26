@@ -1,17 +1,17 @@
 id_produto,nome,categoria,preco_unitario,estoque_atual,vendidos_ultimos_30_dias,custo_unitario
-1,Coca-Cola 2L,Bebidas,8.5,5,139,5.9
-2,Guaraná Antarctica 2L,Bebidas,7.9,16,75,5.5
-3,Pastel de Carne,Salgados,6.0,199,29,3.6
-4,Pastel de Queijo,Salgados,6.0,5,28,3.6
-5,X-Burguer,Lanches,12.0,5,42,7.8
-6,X-Salada,Lanches,13.5,204,40,8.8
-7,Porção de Batata Frita,Porções,10.0,216,28,5.5
-8,Água Mineral 500ml,Bebidas,3.0,86,75,1.8
-9,Suco Natural 300ml,Bebidas,5.5,54,55,3.3
-10,Refrigerante Lata,Bebidas,4.5,5,123,2.7
-11,Cerveja Lata,Bebidas,5.0,5,86,3.2
-12,Esfirra de Frango,Salgados,5.0,13,46,3.0
-13,Bolo de Chocolate,Sobremesas,4.0,14,33,2.2
-14,Pudim de Leite,Sobremesas,4.5,47,28,2.5
-15,Café Expresso,Bebidas,3.5,5,111,1.8
-17,Banana,Frutas,1.2,170,15,0.7
+1,Coca-Cola 2L,Bebidas,8.5,29,54,5.9
+2,Guaraná Antarctica 2L,Bebidas,7.9,28,40,5.5
+3,Pastel de Carne,Salgados,6.0,15,20,3.6
+4,Pastel de Queijo,Salgados,6.0,10,18,3.6
+5,X-Burguer,Lanches,12.0,30,35,7.8
+6,X-Salada,Lanches,13.5,18,28,8.8
+7,Porção de Batata Frita,Porções,10.0,12,22,5.5
+8,Água Mineral 500ml,Bebidas,3.0,50,45,1.8
+9,Suco Natural 300ml,Bebidas,5.5,22,30,3.3
+10,Refrigerante Lata,Bebidas,4.5,60,65,2.7
+11,Cerveja Lata,Bebidas,5.0,35,48,3.2
+12,Esfirra de Frango,Salgados,5.0,18,25,3.0
+13,Bolo de Chocolate,Sobremesas,4.0,16,19,2.2
+14,Pudim de Leite,Sobremesas,4.5,12,17,2.5
+15,Café Expresso,Bebidas,3.5,80,70,1.8
+17,Banana,Frutas,1.2,40,10,0.7
